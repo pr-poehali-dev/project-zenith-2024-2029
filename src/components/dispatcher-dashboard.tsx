@@ -405,6 +405,11 @@ export function DispatcherDashboard() {
       <section id="tasks" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-red-500/20">
         <h2 className="font-orbitron text-2xl font-bold text-white mb-6 flex items-center gap-3">
           <Icon name="ClipboardList" className="text-red-500" size={24} /> Шаг 2. Суточное задание
+          {tasks.length > 0 && (
+            <span className="font-geist text-sm font-normal text-muted-foreground">
+              ({tasks.length} {tasks.length % 10 === 1 && tasks.length % 100 !== 11 ? "задание" : "заданий"})
+            </span>
+          )}
         </h2>
         {tasks.length === 0 ? (
           <div className="font-geist text-muted-foreground bg-card border border-red-500/20 rounded-lg p-6 text-center">
@@ -412,11 +417,11 @@ export function DispatcherDashboard() {
             <p>Загрузите график техпроцесса — задание сформируется автоматически.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto bg-card border border-red-500/20 rounded-lg">
+          <div className="overflow-auto bg-card border border-red-500/20 rounded-lg max-h-[70vh]">
             <table className="text-sm whitespace-nowrap">
-              <thead>
+              <thead className="sticky top-0 z-20 bg-card">
                 <tr className="border-b border-red-500/20 text-left font-geist text-muted-foreground">
-                  <th className="p-2 sticky left-0 bg-card z-10">Участок / устройство</th>
+                  <th className="p-2 sticky left-0 bg-card z-30">Участок / устройство</th>
                   <th className="p-2">Расположение</th>
                   <th className="p-2">№ тех.карты</th>
                   <th className="p-2">Перечень работ</th>

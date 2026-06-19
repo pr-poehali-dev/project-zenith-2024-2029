@@ -43,28 +43,89 @@ def classify_work(work_text: str):
     return responsible, shutdown, two_persons, voice_check, calibration, orientation, insulation_check
 
 def _find_columns(rows):
-    """Ищет индексы колонок в заголовочной строке."""
-    col_device = col_section = col_work = col_planned = col_date = None
+    """Ищет индексы колонок в заголовочной строке (включая доп. поля)."""
+    cols = {
+        "device": None, "section": None, "work": None, "planned": None, "date": None,
+        "executor": None, "location": None, "tech_card": None, "transport_type": None,
+        "car_owner": None, "fuel_spent": None,
+    }
     header_row = 0
     for i, row in enumerate(rows[:15]):
         row_lower = [str(c).lower().strip() if c else "" for c in row]
         for j, cell in enumerate(row_lower):
             if "устройств" in cell:
-                col_device = j
+                cols["device"] = j
             if "участок" in cell or "секция" in cell:
-                col_section = j
+                cols["section"] = j
             if ("работ" in cell and "перечень" in cell) or "наименование работ" in cell or "вид работ" in cell:
-                col_work = j
+                cols["work"] = j
             if "продолжительност" in cell or ("план" in cell and "дат" not in cell):
-                col_planned = j
-            if "дата" in cell:
-                col_date = j
-        if col_device is not None:
+                cols["planned"] = j
+            if "дата" in cell and "перенос" not in cell:
+                cols["date"] = j
+            if "фио" in cell or "исполнител" in cell or "работник" in cell:
+                cols["executor"] = j
+            if "располож" in cell or "место" in cell:
+                cols["location"] = j
+            if "тех" in cell and "карт" in cell:
+                cols["tech_card"] = j
+            if "вид транспорт" in cell or ("транспорт" in cell and "вид" in cell):
+                cols["transport_type"] = j
+            if "собственник" in cell or "владелец" in cell:
+                cols["car_owner"] = j
+            if "гсм" in cell or "топлив" in cell:
+                cols["fuel_spent"] = j
+        if cols["device"] is not None:
             header_row = i
             break
-    if col_device is None:
-        col_device, col_section, col_work, col_planned = 0, 1, 2, 3
-    return header_row, col_device, col_section, col_work, col_planned, col_date
+    if cols["device"] is None:
+        cols["device"], cols["section"], cols["work"], cols["planned"] = 0, 1, 2, 3
+    return header_row, cols
+
+def _cell(row, idx):
+    if idx is None or idx >= len(row) or row[idx] is None:
+        return ""
+    return str(row[idx]).strip()
+
+def _parse_row_date(row, col_date):
+    if col_date is None or col_date >= len(row) or row[col_date] is None:
+        return None
+    val = row[col_date]
+    if isinstance(val, (datetime, date)):
+        return val.date() if isinstance(val, datetime) else val
+    for fmt in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(str(val).strip(), fmt).date()
+        except Exception:
+            pass
+    return None
+
+def _build_task(row, cols):
+    device = _cell(row, cols["device"])
+    work = _cell(row, cols["work"])
+    if not device or not work or device == "None":
+        return None
+    resp, shut, two, voice, cal, ori, ins = classify_work(work)
+    return {
+        "device": device,
+        "section": _cell(row, cols["section"]),
+        "work": work,
+        "planned_duration": _cell(row, cols["planned"]) or "—",
+        "responsible": resp,
+        "shutdown": shut,
+        "two_persons": two,
+        "voice_check": voice,
+        "calibration": cal,
+        "orientation": ori,
+        "insulation_check": ins,
+        "executor": _cell(row, cols["executor"]),
+        "order_number": "",
+        "location": _cell(row, cols["location"]),
+        "tech_card": _cell(row, cols["tech_card"]),
+        "transport_type": _cell(row, cols["transport_type"]),
+        "car_owner": _cell(row, cols["car_owner"]),
+        "fuel_spent": _cell(row, cols["fuel_spent"]),
+    }
 
 def parse_schedule_excel(wb: openpyxl.Workbook, target_date: date):
     """Парсит график техпроцесса, ищет работы на указанную дату."""
@@ -74,51 +135,17 @@ def parse_schedule_excel(wb: openpyxl.Workbook, target_date: date):
     if not rows:
         return tasks
 
-    header_row, col_device, col_section, col_work, col_planned, col_date = _find_columns(rows)
+    header_row, cols = _find_columns(rows)
 
     for row in rows[header_row + 1:]:
         if not any(row):
             continue
-        device = str(row[col_device]).strip() if col_device is not None and row[col_device] else ""
-        section = str(row[col_section]).strip() if col_section is not None and row[col_section] else ""
-        work = str(row[col_work]).strip() if col_work is not None and row[col_work] else ""
-        planned = str(row[col_planned]).strip() if col_planned is not None and row[col_planned] else ""
-
-        if not device or not work or device == "None":
+        row_date = _parse_row_date(row, cols["date"])
+        if cols["date"] is not None and row_date and row_date != target_date:
             continue
-
-        row_date = None
-        if col_date is not None and row[col_date]:
-            val = row[col_date]
-            if isinstance(val, (datetime, date)):
-                row_date = val.date() if isinstance(val, datetime) else val
-            else:
-                for fmt in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
-                    try:
-                        row_date = datetime.strptime(str(val).strip(), fmt).date()
-                        break
-                    except Exception:
-                        pass
-
-        if col_date is not None and row_date and row_date != target_date:
-            continue
-
-        resp, shut, two, voice, cal, ori, ins = classify_work(work)
-        tasks.append({
-            "device": device,
-            "section": section,
-            "work": work,
-            "planned_duration": planned or "—",
-            "responsible": resp,
-            "shutdown": shut,
-            "two_persons": two,
-            "voice_check": voice,
-            "calibration": cal,
-            "orientation": ori,
-            "insulation_check": ins,
-            "executor": "",
-            "order_number": "",
-        })
+        task = _build_task(row, cols)
+        if task:
+            tasks.append(task)
     return tasks
 
 def parse_schedule_excel_bulk(wb: openpyxl.Workbook, year: int, month: int):
@@ -132,61 +159,22 @@ def parse_schedule_excel_bulk(wb: openpyxl.Workbook, year: int, month: int):
     if not rows:
         return {}
 
-    header_row, col_device, col_section, col_work, col_planned, col_date = _find_columns(rows)
-
-    from calendar import monthrange
-    days_in_month = monthrange(year, month)[1]
+    header_row, cols = _find_columns(rows)
     fallback_date = date(year, month, 1)
-
     tasks_by_date: dict = {}
 
     for row in rows[header_row + 1:]:
         if not any(row):
             continue
-        device = str(row[col_device]).strip() if col_device is not None and row[col_device] else ""
-        section = str(row[col_section]).strip() if col_section is not None and row[col_section] else ""
-        work = str(row[col_work]).strip() if col_work is not None and row[col_work] else ""
-        planned = str(row[col_planned]).strip() if col_planned is not None and row[col_planned] else ""
-
-        if not device or not work or device == "None":
+        task = _build_task(row, cols)
+        if not task:
             continue
-
-        row_date = None
-        if col_date is not None and row[col_date]:
-            val = row[col_date]
-            if isinstance(val, (datetime, date)):
-                row_date = val.date() if isinstance(val, datetime) else val
-            else:
-                for fmt in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
-                    try:
-                        row_date = datetime.strptime(str(val).strip(), fmt).date()
-                        break
-                    except Exception:
-                        pass
-
-        # Фильтруем: только нужный год и месяц
+        row_date = _parse_row_date(row, cols["date"])
         if row_date:
             if row_date.year != year or row_date.month != month:
                 continue
         else:
             row_date = fallback_date
-
-        resp, shut, two, voice, cal, ori, ins = classify_work(work)
-        task = {
-            "device": device,
-            "section": section,
-            "work": work,
-            "planned_duration": planned or "—",
-            "responsible": resp,
-            "shutdown": shut,
-            "two_persons": two,
-            "voice_check": voice,
-            "calibration": cal,
-            "orientation": ori,
-            "insulation_check": ins,
-            "executor": "",
-            "order_number": "",
-        }
         tasks_by_date.setdefault(str(row_date), []).append(task)
 
     return tasks_by_date
@@ -250,20 +238,25 @@ def parse_statistics_excel(wb: openpyxl.Workbook):
     return records
 
 def save_tasks(tasks: list, task_date: date):
+    from psycopg2.extras import execute_values
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(f"DELETE FROM {SCHEMA}.esp_daily_tasks WHERE task_date = %s", (task_date,))
-    for t in tasks:
-        cur.execute(f"""
-            INSERT INTO {SCHEMA}.esp_daily_tasks
-            (task_date, device, section, work, planned_duration, responsible, shutdown, two_persons,
-             voice_check, calibration, orientation, insulation_check)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """, (
+    if tasks:
+        values = [(
             task_date, t["device"], t["section"], t["work"], t["planned_duration"],
             t["responsible"], t["shutdown"], t["two_persons"], t["voice_check"],
-            t["calibration"], t["orientation"], t["insulation_check"]
-        ))
+            t["calibration"], t["orientation"], t["insulation_check"],
+            t.get("executor", ""), t.get("location", ""), t.get("tech_card", ""),
+            t.get("transport_type", ""), t.get("car_owner", ""), t.get("fuel_spent", "")
+        ) for t in tasks]
+        execute_values(cur, f"""
+            INSERT INTO {SCHEMA}.esp_daily_tasks
+            (task_date, device, section, work, planned_duration, responsible, shutdown, two_persons,
+             voice_check, calibration, orientation, insulation_check,
+             executor, location, tech_card, transport_type, car_owner, fuel_spent)
+            VALUES %s
+        """, values, page_size=500)
     conn.commit()
     cur.close()
     conn.close()
@@ -316,7 +309,11 @@ def generate_sample_plan(year: int, month: int) -> bytes:
     ws = wb.active
     ws.title = "Оперативный план"
 
-    headers = ["Дата", "Устройство", "Участок", "Перечень работ", "Плановая продолжительность"]
+    headers = [
+        "Дата", "Участок", "Устройство", "Расположение оборудования",
+        "Номер тех. карты", "Перечень работ", "Плановая продолжительность",
+        "ФИО исполнителя", "Собственник автомобиля", "Вид транспорта",
+    ]
     ws.append(headers)
 
     bold = openpyxl.styles.Font(bold=True)
@@ -324,36 +321,41 @@ def generate_sample_plan(year: int, month: int) -> bytes:
         cell.font = bold
 
     devices = [
-        ("АЛС-1 (ПК 12+450)", "Участок №1"),
-        ("АЛС-2 (ПК 18+200)", "Участок №1"),
-        ("САУТ-Ц (ст. Северная)", "Участок №2"),
-        ("ТСКБМ (ПК 24+100)", "Участок №2"),
-        ("КЛУБ-У (ст. Южная)", "Участок №3"),
-        ("УКСПС (ПК 30+780)", "Участок №3"),
+        ("Участок №1", "АЛС-1", "ПК 12+450"),
+        ("Участок №1", "АЛС-2", "ПК 18+200"),
+        ("Участок №2", "САУТ-Ц", "ст. Северная"),
+        ("Участок №2", "ТСКБМ", "ПК 24+100"),
+        ("Участок №3", "КЛУБ-У", "ст. Южная"),
+        ("Участок №3", "УКСПС", "ПК 30+780"),
     ]
-    # Разнообразные работы — для наглядного срабатывания всех признаков:
-    # калибровка / ориентация / изоляция — ответственные, требуют выключения, в два лица
-    # речевой информатор — отдельный признак
+    # Разнообразные работы — для наглядного срабатывания всех признаков
     works = [
-        ("Калибровка ПУ тракта", "01:30"),                          # ответственная, выключение, два лица, калибровка
-        ("Ориентация антенны напольного устройства", "02:00"),      # ответственная, выключение, два лица, ориентация
-        ("Проверка сопротивления изоляции жил кабеля", "00:45"),    # ответственная, выключение, два лица, изоляция
-        ("Проверка работы речевого информатора", "00:30"),          # речевой информатор
-        ("Техническое обслуживание ТО-2", "01:15"),                 # обычная
-        ("Внешний осмотр и чистка аппаратуры", "00:40"),            # обычная
-        ("Проверка показаний и анализ работы устройства", "00:50"), # обычная
+        ("Калибровка ПУ тракта", "01:30", "ТК-101"),
+        ("Ориентация антенны напольного устройства", "02:00", "ТК-205"),
+        ("Проверка сопротивления изоляции жил кабеля", "00:45", "ТК-312"),
+        ("Проверка работы речевого информатора", "00:30", "ТК-418"),
+        ("Техническое обслуживание ТО-2", "01:15", "ТК-507"),
+        ("Внешний осмотр и чистка аппаратуры", "00:40", "ТК-609"),
+        ("Проверка показаний и анализ работы устройства", "00:50", "ТК-714"),
     ]
+    transports = ["Дрезина АДМ", "Автомотриса", "Служебный а/м", "Пешком"]
 
     days = monthrange(year, month)[1]
     for day in range(1, days + 1):
         d = date(year, month, day)
-        # Каждый рабочий день — несколько устройств с разными работами,
-        # смещение обеспечивает чередование всех типов работ по дням
-        for idx, (device, section) in enumerate(devices):
-            work, planned = works[(day + idx) % len(works)]
-            ws.append([d.strftime("%d.%m.%Y"), device, section, work, planned])
+        for idx, (section, device, location) in enumerate(devices):
+            work, planned, tech_card = works[(day + idx) % len(works)]
+            transport = transports[(day + idx) % len(transports)]
+            ws.append([
+                d.strftime("%d.%m.%Y"), section, device, location,
+                tech_card, work, planned,
+                "",  # ФИО — заполняет диспетчер
+                "",  # собственник авто
+                transport,
+            ])
 
-    for col, width in zip("ABCDE", [14, 26, 16, 40, 28]):
+    widths = [12, 14, 14, 22, 16, 40, 18, 22, 22, 18]
+    for col, width in zip("ABCDEFGHIJ", widths):
         ws.column_dimensions[col].width = width
 
     buf = io.BytesIO()
