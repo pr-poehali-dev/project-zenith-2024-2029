@@ -309,6 +309,51 @@ def save_report(records: list, task_date: date, tasks: list):
     cur.close()
     conn.close()
 
+def generate_sample_plan(year: int, month: int) -> bytes:
+    """Генерирует пример оперативного плана на месяц в формате Excel."""
+    from calendar import monthrange
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Оперативный план"
+
+    headers = ["Дата", "Устройство", "Участок", "Перечень работ", "Плановая продолжительность"]
+    ws.append(headers)
+
+    bold = openpyxl.styles.Font(bold=True)
+    for cell in ws[1]:
+        cell.font = bold
+
+    devices = [
+        ("АЛС-1 (ПК 12+450)", "Участок №1"),
+        ("АЛС-2 (ПК 18+200)", "Участок №1"),
+        ("САУТ-Ц (ст. Северная)", "Участок №2"),
+        ("ТСКБМ (ПК 24+100)", "Участок №2"),
+        ("КЛУБ-У (ст. Южная)", "Участок №3"),
+    ]
+    works = [
+        ("Калибровка ПУ тракта", "01:30"),
+        ("Проверка сопротивления изоляции", "00:45"),
+        ("Ориентация антенны", "02:00"),
+        ("Проверка речевого информатора", "00:30"),
+        ("Техническое обслуживание ТО-2", "01:15"),
+    ]
+
+    days = monthrange(year, month)[1]
+    for day in range(1, days + 1):
+        d = date(year, month, day)
+        # Каждый рабочий день — несколько устройств с разными работами
+        for idx, (device, section) in enumerate(devices):
+            work, planned = works[(day + idx) % len(works)]
+            ws.append([d.strftime("%d.%m.%Y"), device, section, work, planned])
+
+    for col, width in zip("ABCDE", [14, 26, 16, 40, 28]):
+        ws.column_dimensions[col].width = width
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read()
+
 def get_tasks(task_date: date):
     conn = get_conn()
     cur = conn.cursor()
@@ -436,6 +481,23 @@ def handler(event: dict, context) -> dict:
         tasks = get_tasks(task_date)
         deviations = sum(1 for r in report if not r["matches_plan"])
         return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps({"report": report, "tasks": tasks, "deviations": deviations, "date": str(task_date)})}
+
+    # GET ?action=sample-plan&year=2026&month=6 — скачать пример оперативного плана
+    if method == "GET" and action == "sample-plan":
+        year = int(qs.get("year", str(date.today().year)))
+        month = int(qs.get("month", str(date.today().month)))
+        file_bytes = generate_sample_plan(year, month)
+        file_b64 = base64.b64encode(file_bytes).decode("utf-8")
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "Content-Disposition": f'attachment; filename="operativnyy_plan_{year}_{month:02d}.xlsx"',
+                "Access-Control-Allow-Origin": "*",
+            },
+            "isBase64Encoded": True,
+            "body": file_b64,
+        }
 
     # POST ?action=parse-schedule-bulk — загрузка оперативного плана за год/месяц целиком
     if method == "POST" and action == "parse-schedule-bulk":

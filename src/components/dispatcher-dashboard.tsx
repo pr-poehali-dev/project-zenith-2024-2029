@@ -160,6 +160,10 @@ export function DispatcherDashboard() {
     }
   }
 
+  const downloadSamplePlan = () => {
+    window.open(`${API_URL}?action=sample-plan&year=${bulkYear}&month=${bulkMonth}`, "_blank")
+  }
+
   const updateExecutor = async (task: Task, field: "executor" | "order_number", value: string) => {
     const updated = { ...task, [field]: value }
     setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)))
@@ -275,6 +279,15 @@ export function DispatcherDashboard() {
             <Button onClick={handleParseBulk} disabled={loadingBulk || !bulkFile} className="bg-red-500 hover:bg-red-600 text-white h-10 px-6">
               {loadingBulk ? <Icon name="LoaderCircle" size={16} className="mr-2 animate-spin" /> : <Icon name="Upload" size={16} className="mr-2" />}
               Загрузить план
+            </Button>
+          </div>
+          <div className="mt-4 pt-4 border-t border-red-500/10 flex items-center justify-between flex-wrap gap-2">
+            <p className="font-geist text-xs text-muted-foreground">
+              <Icon name="Info" size={14} className="inline mr-1 text-red-500" />
+              Нет готового файла? Скачайте пример с правильной структурой колонок и заполните своими данными.
+            </p>
+            <Button onClick={downloadSamplePlan} variant="outline" className="border-red-500/40 text-white hover:bg-red-500/10 h-9">
+              <Icon name="Download" size={16} className="mr-2" /> Скачать пример плана
             </Button>
           </div>
         </div>
