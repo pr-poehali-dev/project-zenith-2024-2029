@@ -12,7 +12,7 @@ export function Navbar() {
           {/* Logo */}
           <div className="flex-shrink-0">
             <h1 className="font-orbitron text-xl font-bold text-white">
-              Synapse<span className="text-red-500">AI</span>
+              Диспетчер<span className="text-red-500"> ЭСП</span>
             </h1>
           </div>
 
@@ -20,23 +20,23 @@ export function Navbar() {
           <div className="hidden md:block">
             <div className="ml-10 flex items-baseline space-x-8">
               <a
-                href="#technology"
+                href="#import"
                 className="font-geist text-white hover:text-red-500 transition-colors duration-200"
               >
-                Технологии
+                Импорт данных
               </a>
-              <a href="#safety" className="font-geist text-white hover:text-red-500 transition-colors duration-200">
-                Безопасность
+              <a href="#tasks" className="font-geist text-white hover:text-red-500 transition-colors duration-200">
+                Суточное задание
               </a>
-              <a href="#faq" className="font-geist text-white hover:text-red-500 transition-colors duration-200">
-                Вопросы
+              <a href="#report" className="font-geist text-white hover:text-red-500 transition-colors duration-200">
+                Отчёт за сутки
               </a>
             </div>
           </div>
 
           {/* CTA Button */}
           <div className="hidden md:block">
-            <Button className="bg-red-500 hover:bg-red-600 text-white font-geist border-0">В лист ожидания</Button>
+            <Button className="bg-red-500 hover:bg-red-600 text-white font-geist border-0">Сформировать отчёт</Button>
           </div>
 
           {/* Mobile menu button */}
@@ -55,29 +55,29 @@ export function Navbar() {
           <div className="md:hidden">
             <div className="px-2 pt-2 pb-3 space-y-1 bg-black/98 border-t border-red-500/20">
               <a
-                href="#technology"
+                href="#import"
                 className="block px-3 py-2 font-geist text-white hover:text-red-500 transition-colors duration-200"
                 onClick={() => setIsOpen(false)}
               >
-                Технологии
+                Импорт данных
               </a>
               <a
-                href="#safety"
+                href="#tasks"
                 className="block px-3 py-2 font-geist text-white hover:text-red-500 transition-colors duration-200"
                 onClick={() => setIsOpen(false)}
               >
-                Безопасность
+                Суточное задание
               </a>
               <a
-                href="#faq"
+                href="#report"
                 className="block px-3 py-2 font-geist text-white hover:text-red-500 transition-colors duration-200"
                 onClick={() => setIsOpen(false)}
               >
-                Вопросы
+                Отчёт за сутки
               </a>
               <div className="px-3 py-2">
                 <Button className="w-full bg-red-500 hover:bg-red-600 text-white font-geist border-0">
-                  В лист ожидания
+                  Сформировать отчёт
                 </Button>
               </div>
             </div>
