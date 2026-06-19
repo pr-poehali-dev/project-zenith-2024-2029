@@ -201,6 +201,10 @@ export function DispatcherDashboard() {
     window.open(`${API_URL}?action=sample-plan&year=${bulkYear}&month=${bulkMonth}`, "_blank")
   }
 
+  const downloadSampleStatistics = () => {
+    window.open(`${API_URL}?action=sample-statistics&year=${bulkYear}&month=${bulkMonth}`, "_blank")
+  }
+
   const updateTaskField = async (task: Task, field: keyof Task, value: string) => {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, [field]: value } : t)))
     await fetch(`${API_URL}?action=update-task&id=${task.id}`, {
@@ -441,6 +445,9 @@ export function DispatcherDashboard() {
             <Button onClick={handleParseStatistics} disabled={loadingReport || !statsFile} className="bg-red-500 hover:bg-red-600 text-white w-full">
               {loadingReport ? <Icon name="LoaderCircle" size={18} className="mr-2 animate-spin" /> : <Icon name="FileCheck2" size={18} className="mr-2" />}
               Сформировать отчёт за сутки
+            </Button>
+            <Button onClick={downloadSampleStatistics} variant="outline" className="border-red-500/40 text-white hover:bg-red-500/10 w-full mt-3">
+              <Icon name="Download" size={16} className="mr-2" /> Скачать образец статистики за месяц
             </Button>
           </div>
         </div>

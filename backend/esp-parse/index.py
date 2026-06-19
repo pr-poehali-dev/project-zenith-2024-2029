@@ -386,6 +386,50 @@ def generate_sample_plan(year: int, month: int) -> bytes:
     buf.seek(0)
     return buf.read()
 
+def generate_sample_statistics(year: int, month: int) -> bytes:
+    """Генерирует образец выгрузки ПО «Статистика» за весь месяц в формате Excel."""
+    from calendar import monthrange
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Статистика"
+
+    headers = [
+        "Дата", "Устройство", "Время работ (факт)", "Дверь (откр/закр)",
+        "Калибровка", "Результат калибровки", "Отказ/Офлайн",
+    ]
+    ws.append(headers)
+    bold = openpyxl.styles.Font(bold=True)
+    for cell in ws[1]:
+        cell.font = bold
+
+    devices = ["АЛС-1", "АЛС-2", "САУТ-Ц", "ТСКБМ", "КЛУБ-У", "УКСПС",
+               "АЛСН", "САУТ-ЦМ", "ДИСК-Б", "КТСМ-02", "УКПТ", "ПОНАБ"]
+    durations = ["01:30", "02:05", "00:43", "00:32", "01:18", "00:38",
+                 "00:52", "01:12", "00:36", "01:27", "00:48", "01:05"]
+
+    days = monthrange(year, month)[1]
+    for day in range(1, days + 1):
+        d = date(year, month, day)
+        for idx, device in enumerate(devices):
+            seed = (day + idx) % 12
+            door = "Открыта" if seed % 4 != 0 else "Закрыта"
+            calibration = "Выполнена" if seed % 3 == 0 else "Не выполнена"
+            cal_result = "Норма" if seed % 3 == 0 and seed % 5 != 0 else ("Отклонение" if seed % 3 == 0 else "—")
+            shutdown = "Отказ" if seed == 7 else "Норма"
+            ws.append([
+                d.strftime("%d.%m.%Y"), device, durations[(day + idx) % len(durations)],
+                door, calibration, cal_result, shutdown,
+            ])
+
+    widths = [12, 14, 18, 18, 16, 22, 16]
+    for col, width in zip("ABCDEFG", widths):
+        ws.column_dimensions[col].width = width
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read()
+
 TASK_COLS = ["id","device","section","work","planned_duration","responsible","shutdown",
              "two_persons","voice_check","calibration","orientation","insulation_check",
              "executor","order_number","tech_card","location","done","transfer_date",
@@ -610,6 +654,23 @@ def handler(event: dict, context) -> dict:
             "headers": {
                 "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "Content-Disposition": f'attachment; filename="operativnyy_plan_{year}_{month:02d}.xlsx"',
+                "Access-Control-Allow-Origin": "*",
+            },
+            "isBase64Encoded": True,
+            "body": file_b64,
+        }
+
+    # GET ?action=sample-statistics&year=2026&month=6 — скачать образец выгрузки «Статистика» за месяц
+    if method == "GET" and action == "sample-statistics":
+        year = int(qs.get("year", str(date.today().year)))
+        month = int(qs.get("month", str(date.today().month)))
+        file_bytes = generate_sample_statistics(year, month)
+        file_b64 = base64.b64encode(file_bytes).decode("utf-8")
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "Content-Disposition": f'attachment; filename="statistika_{year}_{month:02d}.xlsx"',
                 "Access-Control-Allow-Origin": "*",
             },
             "isBase64Encoded": True,
