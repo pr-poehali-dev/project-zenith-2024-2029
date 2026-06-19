@@ -152,16 +152,19 @@ def parse_schedule_excel_bulk(wb: openpyxl.Workbook, year: int, month: int):
     """
     Парсит весь оперативный план за указанный год и месяц.
     Возвращает dict: {date: [tasks]} сгруппированный по датам.
-    Если колонки дат нет — все записи относятся к первому дню периода.
+    Если в файле есть колонка дат — раскладывает по ним.
+    Если колонки дат нет — распределяет задания на каждый день месяца.
     """
+    from calendar import monthrange
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
         return {}
 
     header_row, cols = _find_columns(rows)
-    fallback_date = date(year, month, 1)
+    days_in_month = monthrange(year, month)[1]
     tasks_by_date: dict = {}
+    no_date_tasks: list = []
 
     for row in rows[header_row + 1:]:
         if not any(row):
@@ -171,11 +174,21 @@ def parse_schedule_excel_bulk(wb: openpyxl.Workbook, year: int, month: int):
             continue
         row_date = _parse_row_date(row, cols["date"])
         if row_date:
+            # Дата в файле указана — раскладываем точно по ней
             if row_date.year != year or row_date.month != month:
                 continue
+            tasks_by_date.setdefault(str(row_date), []).append(task)
         else:
-            row_date = fallback_date
-        tasks_by_date.setdefault(str(row_date), []).append(task)
+            # Даты нет — копим, чтобы потом распределить по всем дням месяца
+            no_date_tasks.append(task)
+
+    # Если в файле не было колонки даты — распределяем задания
+    # равномерно по всем дням месяца (каждый набор работ повторяется ежедневно)
+    if no_date_tasks:
+        for day in range(1, days_in_month + 1):
+            d = date(year, month, day)
+            for task in no_date_tasks:
+                tasks_by_date.setdefault(str(d), []).append(dict(task))
 
     return tasks_by_date
 
