@@ -116,7 +116,8 @@ export async function uploadScheduleBulk(file: File, year: number, month: number
         // Кэшируем результат локально, перечитав по дням
         const byDate = parseScheduleBulk(bytes, year, month)
         for (const [d, tasks] of Object.entries(byDate)) await dbSaveTasks(d, tasks)
-        return { days: data.days || Object.keys(byDate).length, total: data.total_tasks || 0 }
+        const localTotal = Object.values(byDate).reduce((sum, tasks) => sum + tasks.length, 0)
+        return { days: data.days || Object.keys(byDate).length, total: data.total_tasks || localTotal }
       }
     } catch {
       // офлайн
