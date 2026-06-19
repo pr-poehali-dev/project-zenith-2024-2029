@@ -1,10 +1,11 @@
 import {
   parseScheduleForDate, parseScheduleBulk, parseStatistics, buildReport,
+  exportMonthlyReport as buildMonthlyExcel,
   type Task, type ReportItem,
 } from "./offline-engine"
 import {
   dbSaveTasks, dbGetTasks, dbUpdateTask, dbTransferTask,
-  dbSaveReport, dbGetReport,
+  dbSaveReport, dbGetReport, dbGetMonthReports,
   dbGetTrips, dbAddTrip, dbUpdateTrip, dbDeleteTrip,
   type Trip,
 } from "./offline-db"
@@ -212,6 +213,26 @@ export async function deleteTrip(id: number) {
       await tryFetch(`${API_URL}?action=delete-unplanned&id=${id}`, { method: "DELETE" })
     } catch { /* офлайн */ }
   }
+}
+
+/** Собирает все отчёты за месяц (онлайн — с сервера по дням и кэширует, офлайн — из хранилища) и выгружает Excel */
+export async function downloadMonthlyReport(year: number, month: number): Promise<number> {
+  if (isOnline()) {
+    try {
+      const days = new Date(year, month, 0).getDate()
+      for (let day = 1; day <= days; day++) {
+        const dstr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+        const res = await tryFetch(`${API_URL}?action=report&date=${dstr}`)
+        const data = await res.json()
+        const report = (data.report || []) as ReportItem[]
+        if (report.length) await dbSaveReport(dstr, report)
+      }
+    } catch { /* офлайн — используем то, что уже в кэше */ }
+  }
+  const reports = await dbGetMonthReports(year, month)
+  if (reports.length === 0) return 0
+  buildMonthlyExcel(year, month, reports)
+  return reports.length
 }
 
 export { API_URL }

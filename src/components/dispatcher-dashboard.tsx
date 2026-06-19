@@ -31,6 +31,7 @@ export function DispatcherDashboard() {
   const [loading, setLoading] = useState(false)
   const [loadingReport, setLoadingReport] = useState(false)
   const [loadingBulk, setLoadingBulk] = useState(false)
+  const [loadingMonthly, setLoadingMonthly] = useState(false)
   const [statusMsg, setStatusMsg] = useState("")
   const [statusErr, setStatusErr] = useState("")
   const [online, setOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true)
@@ -146,6 +147,24 @@ export function DispatcherDashboard() {
     if (report.length === 0) { setStatusErr("Нет данных отчёта для выгрузки"); return }
     exportShiftReport(selectedDate, report, trips)
     setStatusMsg("Сменный отчёт выгружен в Excel")
+  }
+
+  const handleExportMonthly = async () => {
+    setLoadingMonthly(true)
+    setStatusMsg("")
+    setStatusErr("")
+    try {
+      const count = await api.downloadMonthlyReport(bulkYear, bulkMonth)
+      if (count === 0) {
+        setStatusErr(`Нет данных за ${MONTHS[bulkMonth - 1]} ${bulkYear}. Сначала сформируйте отчёты за дни месяца.`)
+      } else {
+        setStatusMsg(`Месячная сводка выгружена: ${count} записей за ${MONTHS[bulkMonth - 1]} ${bulkYear}`)
+      }
+    } catch {
+      setStatusErr("Ошибка при формировании месячной сводки")
+    } finally {
+      setLoadingMonthly(false)
+    }
   }
 
   const updateTaskField = async (task: Task, field: keyof Task, value: string) => {
@@ -748,6 +767,43 @@ export function DispatcherDashboard() {
             </div>
           </>
         )}
+
+        {/* Месячная сводка */}
+        <div className="mt-8 bg-card border border-red-500/30 rounded-lg p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Icon name="CalendarRange" className="text-red-500" size={28} />
+            <div>
+              <h3 className="font-geist text-lg font-semibold text-white">Месячная сводка</h3>
+              <p className="font-geist text-sm text-muted-foreground">Сводный отчёт за месяц: итоги, динамика по дням и рейтинг устройств. Работает и офлайн.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="font-geist text-xs text-muted-foreground mb-1 block">Год</label>
+              <Input
+                type="number"
+                value={bulkYear}
+                onChange={(e) => setBulkYear(Number(e.target.value))}
+                className="bg-background border-red-500/20 text-white w-24"
+                min={2020} max={2099}
+              />
+            </div>
+            <div>
+              <label className="font-geist text-xs text-muted-foreground mb-1 block">Месяц</label>
+              <select
+                value={bulkMonth}
+                onChange={(e) => setBulkMonth(Number(e.target.value))}
+                className="bg-background border border-red-500/20 text-white rounded-md px-3 h-10 font-geist text-sm"
+              >
+                {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+              </select>
+            </div>
+            <Button onClick={handleExportMonthly} disabled={loadingMonthly} className="bg-red-500 hover:bg-red-600 text-white h-10 px-6">
+              {loadingMonthly ? <Icon name="LoaderCircle" size={18} className="mr-2 animate-spin" /> : <Icon name="Download" size={18} className="mr-2" />}
+              Скачать месячную сводку
+            </Button>
+          </div>
+        </div>
       </section>
 
       {/* Модальное окно переноса работы */}

@@ -527,3 +527,96 @@ export function exportShiftReport(
 
   XLSX.writeFile(wb, `smennyy_otchet_${y}_${m}_${d}.xlsx`)
 }
+
+const MONTH_NAMES = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"]
+
+/** Формирует и скачивает месячную сводку в Excel: итоги + по дням + по устройствам */
+export function exportMonthlyReport(
+  year: number,
+  month: number,
+  reports: (ReportItem & { report_date: string })[],
+): void {
+  const wb = XLSX.utils.book_new()
+  const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`
+
+  // ---- Лист 1: Итоги месяца ----
+  const total = reports.length
+  const matches = reports.filter((r) => r.matches_plan).length
+  const deviations = total - matches
+  const compliance = total ? Math.round((matches / total) * 100) : 0
+  const daysWorked = new Set(reports.map((r) => r.report_date)).size
+  const summary: (string | number)[][] = [
+    ["Месячная сводка диспетчера ЭСП"],
+    ["Период", monthLabel],
+    [],
+    ["Показатель", "Значение"],
+    ["Рабочих дней с отчётами", daysWorked],
+    ["Всего записей по устройствам", total],
+    ["Соответствуют плану", matches],
+    ["Отклонений", deviations],
+    ["Соответствие плану, %", compliance],
+    ["Калибровок ПУ выполнено", reports.filter((r) => r.calibration_done).length],
+    ["Калибровка с отклонением", reports.filter((r) => r.calibration_result === "Отклонение").length],
+    ["Факт выключений", reports.filter((r) => r.shutdown_fact).length],
+    ["Персонал присутствовал", reports.filter((r) => r.staff_present).length],
+  ]
+  const wsSummary = XLSX.utils.aoa_to_sheet(summary)
+  wsSummary["!cols"] = [{ wch: 32 }, { wch: 16 }]
+  XLSX.utils.book_append_sheet(wb, wsSummary, "Итоги месяца")
+
+  // ---- Лист 2: По дням ----
+  const byDay = new Map<string, ReportItem[]>()
+  for (const r of reports) {
+    ;(byDay.get(r.report_date) || byDay.set(r.report_date, []).get(r.report_date)!).push(r)
+  }
+  const dayHeaders = ["Дата", "Устройств", "Соответствуют", "Отклонений", "Соответствие, %", "Выключений", "Калибровок"]
+  const dayRows: (string | number)[][] = [dayHeaders]
+  const sortedDays = Array.from(byDay.keys()).sort()
+  for (const day of sortedDays) {
+    const items = byDay.get(day)!
+    const m = items.filter((r) => r.matches_plan).length
+    const [yy, mm, dd] = day.split("-")
+    dayRows.push([
+      `${dd}.${mm}.${yy}`,
+      items.length,
+      m,
+      items.length - m,
+      items.length ? Math.round((m / items.length) * 100) : 0,
+      items.filter((r) => r.shutdown_fact).length,
+      items.filter((r) => r.calibration_done).length,
+    ])
+  }
+  const wsDays = XLSX.utils.aoa_to_sheet(dayRows)
+  wsDays["!cols"] = [{ wch: 12 }, { wch: 11 }, { wch: 14 }, { wch: 11 }, { wch: 16 }, { wch: 13 }, { wch: 12 }]
+  XLSX.utils.book_append_sheet(wb, wsDays, "По дням")
+
+  // ---- Лист 3: По устройствам ----
+  const byDevice = new Map<string, ReportItem[]>()
+  for (const r of reports) {
+    ;(byDevice.get(r.device) || byDevice.set(r.device, []).get(r.device)!).push(r)
+  }
+  const devHeaders = ["Устройство", "Записей", "Соответствуют", "Отклонений", "Соответствие, %", "Выключений", "Калибровок с отклонением"]
+  const devRows: (string | number)[][] = [devHeaders]
+  const devEntries = Array.from(byDevice.entries()).sort((a, b) => {
+    const da = a[1].filter((r) => !r.matches_plan).length
+    const db = b[1].filter((r) => !r.matches_plan).length
+    return db - da
+  })
+  for (const [device, items] of devEntries) {
+    const m = items.filter((r) => r.matches_plan).length
+    devRows.push([
+      device,
+      items.length,
+      m,
+      items.length - m,
+      items.length ? Math.round((m / items.length) * 100) : 0,
+      items.filter((r) => r.shutdown_fact).length,
+      items.filter((r) => r.calibration_result === "Отклонение").length,
+    ])
+  }
+  const wsDev = XLSX.utils.aoa_to_sheet(devRows)
+  wsDev["!cols"] = [{ wch: 16 }, { wch: 9 }, { wch: 14 }, { wch: 11 }, { wch: 16 }, { wch: 13 }, { wch: 24 }]
+  XLSX.utils.book_append_sheet(wb, wsDev, "По устройствам")
+
+  XLSX.writeFile(wb, `mesyachnaya_svodka_${year}_${String(month).padStart(2, "0")}.xlsx`)
+}

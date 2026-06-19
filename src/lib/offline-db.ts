@@ -113,6 +113,14 @@ export async function dbGetReport(date: string): Promise<ReportItem[]> {
   return list.sort((a, b) => a.id - b.id)
 }
 
+/** Возвращает все отчёты за месяц с привязкой к дате */
+export async function dbGetMonthReports(year: number, month: number): Promise<(ReportItem & { report_date: string })[]> {
+  const db = await getDB()
+  const all = await db.getAll("reports")
+  const prefix = `${year}-${String(month).padStart(2, "0")}-`
+  return all.filter((r) => r.report_date.startsWith(prefix))
+}
+
 // ---- Trips ----
 export async function dbGetTrips(date: string): Promise<Trip[]> {
   const db = await getDB()
