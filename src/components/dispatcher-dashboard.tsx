@@ -35,6 +35,7 @@ export function DispatcherDashboard() {
   const [statusErr, setStatusErr] = useState("")
   const [online, setOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true)
   const [offlineReady, setOfflineReady] = useState(false)
+  const [shared, setShared] = useState(false)
   const scheduleRef = useRef<HTMLInputElement>(null)
   const statsRef = useRef<HTMLInputElement>(null)
   const bulkRef = useRef<HTMLInputElement>(null)
@@ -181,6 +182,31 @@ export function DispatcherDashboard() {
     setSelectedDate(d.toISOString().slice(0, 10))
   }
 
+  const shareLink = async () => {
+    const url = window.location.origin
+    const shareData = { title: "Рабочее место диспетчера ЭСП", url }
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData)
+        return
+      }
+    } catch {
+      // пользователь отменил — пробуем копирование
+    }
+    try {
+      await navigator.clipboard.writeText(url)
+    } catch {
+      const ta = document.createElement("textarea")
+      ta.value = url
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand("copy")
+      document.body.removeChild(ta)
+    }
+    setShared(true)
+    setTimeout(() => setShared(false), 2500)
+  }
+
   const dayLabel = new Date(selectedDate).toLocaleDateString("ru-RU", {
     weekday: "short", day: "numeric", month: "long",
   })
@@ -223,6 +249,16 @@ export function DispatcherDashboard() {
                   <Icon name={online ? "Wifi" : "WifiOff"} size={14} />
                   {online ? "Онлайн" : "Офлайн"}
                 </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={shareLink}
+                  className="border-red-500/30 text-white hover:bg-red-500/10 h-7 px-2.5 font-geist text-xs"
+                  title="Скопировать ссылку на приложение, чтобы поделиться с коллегами"
+                >
+                  <Icon name={shared ? "Check" : "Share2"} size={14} className="mr-1.5" />
+                  {shared ? "Скопировано" : "Поделиться"}
+                </Button>
               </div>
               <p className="font-geist text-muted-foreground mt-1">Анализ статистики и автоматическое формирование отчётных форм за смену</p>
             </div>
