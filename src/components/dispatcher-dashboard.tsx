@@ -382,9 +382,8 @@ export function DispatcherDashboard() {
                       <Input
                         value={t.order_number}
                         onChange={(e) => updateExecutor(t, "order_number", e.target.value)}
-                        placeholder={t.shutdown ? "№ приказа" : "—"}
-                        disabled={!t.shutdown}
-                        className="bg-background border-red-500/20 text-white h-9 w-28"
+                        placeholder="№ приказа"
+                        className={`bg-background text-white h-9 w-36 ${t.shutdown ? "border-orange-500/50" : "border-red-500/20"}`}
                       />
                     </td>
                   </tr>
