@@ -21,6 +21,32 @@ type Task = {
   insulation_check: boolean
   executor: string
   order_number: string
+  tech_card: string
+  location: string
+  done: string
+  transfer_date: string | null
+  transfer_reason: string
+  car_owner: string
+  fuel_spent: string
+  transport_type: string
+  arrival_time: string
+  departure_time: string
+  power_off_time: string
+  power_on_time: string
+  total_off_hours: string
+}
+
+type Trip = {
+  id: number
+  device: string
+  location: string
+  executor: string
+  power_off_time: string
+  power_on_time: string
+  total_off_hours: string
+  is_failure: string
+  is_pre_failure: string
+  reason: string
 }
 
 type ReportItem = {
@@ -57,8 +83,12 @@ export function DispatcherDashboard() {
   const now = new Date()
   const [selectedDate, setSelectedDate] = useState(todayStr())
   const [tasks, setTasks] = useState<Task[]>([])
+  const [trips, setTrips] = useState<Trip[]>([])
   const [report, setReport] = useState<ReportItem[]>([])
   const [deviations, setDeviations] = useState(0)
+  const [transferTaskId, setTransferTaskId] = useState<number | null>(null)
+  const [transferNewDate, setTransferNewDate] = useState(todayStr())
+  const [transferReason, setTransferReason] = useState("")
   const [scheduleFile, setScheduleFile] = useState<File | null>(null)
   const [statsFile, setStatsFile] = useState<File | null>(null)
   const [bulkFile, setBulkFile] = useState<File | null>(null)
@@ -86,10 +116,17 @@ export function DispatcherDashboard() {
     setDeviations(data.deviations || 0)
   }, [selectedDate])
 
+  const loadTrips = useCallback(async () => {
+    const res = await fetch(`${API_URL}?action=unplanned&date=${selectedDate}`)
+    const data = await res.json()
+    setTrips(data.trips || [])
+  }, [selectedDate])
+
   useEffect(() => {
     loadTasks()
     loadReport()
-  }, [loadTasks, loadReport])
+    loadTrips()
+  }, [loadTasks, loadReport, loadTrips])
 
   const handleParseSchedule = async () => {
     if (!scheduleFile) { setStatusErr("Выберите файл графика техпроцесса"); return }
@@ -164,14 +201,51 @@ export function DispatcherDashboard() {
     window.open(`${API_URL}?action=sample-plan&year=${bulkYear}&month=${bulkMonth}`, "_blank")
   }
 
-  const updateExecutor = async (task: Task, field: "executor" | "order_number", value: string) => {
-    const updated = { ...task, [field]: value }
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)))
+  const updateTaskField = async (task: Task, field: keyof Task, value: string) => {
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, [field]: value } : t)))
     await fetch(`${API_URL}?action=update-task&id=${task.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ executor: updated.executor, order_number: updated.order_number }),
+      body: JSON.stringify({ [field]: value }),
     })
+  }
+
+  const openTransfer = (taskId: number) => {
+    setTransferTaskId(taskId)
+    setTransferNewDate(selectedDate)
+    setTransferReason("")
+  }
+
+  const submitTransfer = async () => {
+    if (transferTaskId === null) return
+    await fetch(`${API_URL}?action=transfer-task&id=${transferTaskId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ new_date: transferNewDate, reason: transferReason }),
+    })
+    setTransferTaskId(null)
+    setStatusMsg(`Работа перенесена на ${new Date(transferNewDate).toLocaleDateString("ru-RU")}`)
+    await loadTasks()
+  }
+
+  const addTrip = async () => {
+    const res = await fetch(`${API_URL}?action=add-unplanned&date=${selectedDate}`, { method: "POST" })
+    await res.json()
+    await loadTrips()
+  }
+
+  const updateTrip = async (trip: Trip, field: keyof Trip, value: string) => {
+    setTrips((prev) => prev.map((t) => (t.id === trip.id ? { ...t, [field]: value } : t)))
+    await fetch(`${API_URL}?action=update-unplanned&id=${trip.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: value }),
+    })
+  }
+
+  const deleteTrip = async (tripId: number) => {
+    setTrips((prev) => prev.filter((t) => t.id !== tripId))
+    await fetch(`${API_URL}?action=delete-unplanned&id=${tripId}`, { method: "DELETE" })
   }
 
   const responsibleCount = tasks.filter((t) => t.responsible).length
@@ -339,52 +413,166 @@ export function DispatcherDashboard() {
           </div>
         ) : (
           <div className="overflow-x-auto bg-card border border-red-500/20 rounded-lg">
-            <table className="w-full text-sm">
+            <table className="text-sm whitespace-nowrap">
               <thead>
                 <tr className="border-b border-red-500/20 text-left font-geist text-muted-foreground">
-                  <th className="p-3">Устройство / участок</th>
-                  <th className="p-3">Перечень работ</th>
-                  <th className="p-3">План</th>
-                  <th className="p-3">Признаки</th>
-                  <th className="p-3">Исполнитель (ФИО)</th>
-                  <th className="p-3">Приказ на выкл.</th>
+                  <th className="p-2 sticky left-0 bg-card z-10">Участок / устройство</th>
+                  <th className="p-2">Расположение</th>
+                  <th className="p-2">№ тех.карты</th>
+                  <th className="p-2">Перечень работ</th>
+                  <th className="p-2">План</th>
+                  <th className="p-2">Признаки</th>
+                  <th className="p-2">ФИО исполнителя</th>
+                  <th className="p-2">Приказ на выкл.</th>
+                  <th className="p-2">Выполн. (+/-)</th>
+                  <th className="p-2">Собственник авто</th>
+                  <th className="p-2">ГСМ, л</th>
+                  <th className="p-2">Вид транспорта</th>
+                  <th className="p-2">Прибытие</th>
+                  <th className="p-2">Убытие</th>
+                  <th className="p-2">Время выкл.</th>
+                  <th className="p-2">Время вкл.</th>
+                  <th className="p-2">Итого откл. (ч)</th>
+                  <th className="p-2">Перенос</th>
                 </tr>
               </thead>
               <tbody>
                 {tasks.map((t) => (
                   <tr key={t.id} className="border-b border-red-500/10 hover:bg-red-500/5">
-                    <td className="p-3">
+                    <td className="p-2 sticky left-0 bg-card z-10">
                       <div className="font-geist text-white font-medium">{t.device}</div>
                       <div className="font-geist text-xs text-muted-foreground">{t.section}</div>
+                      {t.transfer_date && (
+                        <div className="text-xs text-yellow-400 mt-1 flex items-center gap-1">
+                          <Icon name="ArrowRightLeft" size={12} /> перенесено
+                        </div>
+                      )}
                     </td>
-                    <td className="p-3 font-geist text-white">{t.work}</td>
-                    <td className="p-3 font-space-mono text-white">{t.planned_duration}</td>
-                    <td className="p-3">
-                      <div className="flex flex-wrap gap-1">
-                        {t.responsible && <Badge className="bg-red-500/20 text-red-400 border border-red-500/30">Ответственная</Badge>}
-                        {t.shutdown && <Badge className="bg-orange-500/20 text-orange-400 border border-orange-500/30">Выключение</Badge>}
-                        {t.two_persons && <Badge className="bg-blue-500/20 text-blue-400 border border-blue-500/30">В два лица</Badge>}
-                        {t.voice_check && <Badge className="bg-purple-500/20 text-purple-400 border border-purple-500/30">Реч. информатор</Badge>}
-                        {t.calibration && <Badge className="bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">Калибровка</Badge>}
-                        {t.orientation && <Badge className="bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">Ориентация</Badge>}
-                        {t.insulation_check && <Badge className="bg-pink-500/20 text-pink-400 border border-pink-500/30">Изоляция</Badge>}
+                    <td className="p-2">
+                      <Input value={t.location} onChange={(e) => updateTaskField(t, "location", e.target.value)} placeholder="—" className="bg-background border-red-500/20 text-white h-8 w-36 text-xs" />
+                    </td>
+                    <td className="p-2">
+                      <Input value={t.tech_card} onChange={(e) => updateTaskField(t, "tech_card", e.target.value)} placeholder="№" className="bg-background border-red-500/20 text-white h-8 w-24 text-xs" />
+                    </td>
+                    <td className="p-2 font-geist text-white max-w-[220px] whitespace-normal">{t.work}</td>
+                    <td className="p-2 font-space-mono text-white">{t.planned_duration}</td>
+                    <td className="p-2">
+                      <div className="flex flex-wrap gap-1 max-w-[180px]">
+                        {t.responsible && <Badge className="bg-red-500/20 text-red-400 border border-red-500/30">Ответств.</Badge>}
+                        {t.shutdown && <Badge className="bg-orange-500/20 text-orange-400 border border-orange-500/30">Выкл.</Badge>}
+                        {t.two_persons && <Badge className="bg-blue-500/20 text-blue-400 border border-blue-500/30">2 лица</Badge>}
+                        {t.voice_check && <Badge className="bg-purple-500/20 text-purple-400 border border-purple-500/30">Реч.инф.</Badge>}
+                        {t.calibration && <Badge className="bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">Калибр.</Badge>}
+                        {t.orientation && <Badge className="bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">Ориент.</Badge>}
+                        {t.insulation_check && <Badge className="bg-pink-500/20 text-pink-400 border border-pink-500/30">Изоляц.</Badge>}
                       </div>
                     </td>
-                    <td className="p-3">
-                      <Input
-                        value={t.executor}
-                        onChange={(e) => updateExecutor(t, "executor", e.target.value)}
-                        placeholder="Введите ФИО"
-                        className="bg-background border-red-500/20 text-white h-9 w-44"
-                      />
+                    <td className="p-2">
+                      <Input value={t.executor} onChange={(e) => updateTaskField(t, "executor", e.target.value)} placeholder="ФИО" className={`bg-background text-white h-8 w-40 text-xs ${!t.executor ? "border-yellow-500/40" : "border-red-500/20"}`} />
                     </td>
-                    <td className="p-3">
-                      <Input
-                        value={t.order_number}
-                        onChange={(e) => updateExecutor(t, "order_number", e.target.value)}
-                        placeholder="№ приказа"
-                        className={`bg-background text-white h-9 w-36 ${t.shutdown ? "border-orange-500/50" : "border-red-500/20"}`}
-                      />
+                    <td className="p-2">
+                      <Input value={t.order_number} onChange={(e) => updateTaskField(t, "order_number", e.target.value)} placeholder="№ приказа" className={`bg-background text-white h-8 w-28 text-xs ${t.shutdown ? "border-orange-500/50" : "border-red-500/20"}`} />
+                    </td>
+                    <td className="p-2">
+                      <select value={t.done} onChange={(e) => updateTaskField(t, "done", e.target.value)} className="bg-background border border-red-500/20 text-white rounded h-8 px-2 text-xs">
+                        <option value="">—</option>
+                        <option value="+">+</option>
+                        <option value="-">−</option>
+                      </select>
+                    </td>
+                    <td className="p-2">
+                      <Input value={t.car_owner} onChange={(e) => updateTaskField(t, "car_owner", e.target.value)} placeholder="—" className="bg-background border-red-500/20 text-white h-8 w-36 text-xs" />
+                    </td>
+                    <td className="p-2">
+                      <Input value={t.fuel_spent} onChange={(e) => updateTaskField(t, "fuel_spent", e.target.value)} placeholder="0" className="bg-background border-red-500/20 text-white h-8 w-16 text-xs" />
+                    </td>
+                    <td className="p-2">
+                      <Input value={t.transport_type} onChange={(e) => updateTaskField(t, "transport_type", e.target.value)} placeholder="—" className="bg-background border-red-500/20 text-white h-8 w-28 text-xs" />
+                    </td>
+                    <td className="p-2">
+                      <Input value={t.arrival_time} onChange={(e) => updateTaskField(t, "arrival_time", e.target.value)} placeholder="--:--" className="bg-background border-red-500/20 text-white h-8 w-20 text-xs" />
+                    </td>
+                    <td className="p-2">
+                      <Input value={t.departure_time} onChange={(e) => updateTaskField(t, "departure_time", e.target.value)} placeholder="--:--" className="bg-background border-red-500/20 text-white h-8 w-20 text-xs" />
+                    </td>
+                    <td className="p-2">
+                      <Input value={t.power_off_time} onChange={(e) => updateTaskField(t, "power_off_time", e.target.value)} placeholder="--:--" className="bg-background border-red-500/20 text-white h-8 w-20 text-xs" />
+                    </td>
+                    <td className="p-2">
+                      <Input value={t.power_on_time} onChange={(e) => updateTaskField(t, "power_on_time", e.target.value)} placeholder="--:--" className="bg-background border-red-500/20 text-white h-8 w-20 text-xs" />
+                    </td>
+                    <td className="p-2">
+                      <Input value={t.total_off_hours} onChange={(e) => updateTaskField(t, "total_off_hours", e.target.value)} placeholder="0" className="bg-background border-red-500/20 text-white h-8 w-16 text-xs" />
+                    </td>
+                    <td className="p-2">
+                      <Button size="sm" variant="outline" onClick={() => openTransfer(t.id)} className="border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10 h-8 px-2">
+                        <Icon name="ArrowRightLeft" size={14} />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Внеплановые выезды */}
+      <section id="unplanned" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-red-500/20">
+        <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+          <h2 className="font-orbitron text-2xl font-bold text-white flex items-center gap-3">
+            <Icon name="Siren" className="text-red-500" size={24} /> Внеплановый выезд
+          </h2>
+          <Button onClick={addTrip} className="bg-red-500 hover:bg-red-600 text-white">
+            <Icon name="Plus" size={18} className="mr-2" /> Добавить выезд
+          </Button>
+        </div>
+        {trips.length === 0 ? (
+          <div className="font-geist text-muted-foreground bg-card border border-red-500/20 rounded-lg p-6 text-center">
+            <Icon name="Info" size={24} className="inline mb-2 text-red-500" />
+            <p>Внеплановых выездов на эту дату нет. Нажмите «Добавить выезд», чтобы зафиксировать.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto bg-card border border-red-500/20 rounded-lg">
+            <table className="text-sm whitespace-nowrap">
+              <thead>
+                <tr className="border-b border-red-500/20 text-left font-geist text-muted-foreground">
+                  <th className="p-2">Устройство</th>
+                  <th className="p-2">Расположение</th>
+                  <th className="p-2">ФИО</th>
+                  <th className="p-2">Время выкл.</th>
+                  <th className="p-2">Время вкл.</th>
+                  <th className="p-2">Итого откл. (ч)</th>
+                  <th className="p-2">Отказ</th>
+                  <th className="p-2">Предотказ</th>
+                  <th className="p-2">Причина</th>
+                  <th className="p-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {trips.map((tr) => (
+                  <tr key={tr.id} className="border-b border-red-500/10 hover:bg-red-500/5">
+                    <td className="p-2"><Input value={tr.device} onChange={(e) => updateTrip(tr, "device", e.target.value)} placeholder="—" className="bg-background border-red-500/20 text-white h-8 w-36 text-xs" /></td>
+                    <td className="p-2"><Input value={tr.location} onChange={(e) => updateTrip(tr, "location", e.target.value)} placeholder="—" className="bg-background border-red-500/20 text-white h-8 w-36 text-xs" /></td>
+                    <td className="p-2"><Input value={tr.executor} onChange={(e) => updateTrip(tr, "executor", e.target.value)} placeholder="ФИО" className="bg-background border-red-500/20 text-white h-8 w-40 text-xs" /></td>
+                    <td className="p-2"><Input value={tr.power_off_time} onChange={(e) => updateTrip(tr, "power_off_time", e.target.value)} placeholder="--:--" className="bg-background border-red-500/20 text-white h-8 w-20 text-xs" /></td>
+                    <td className="p-2"><Input value={tr.power_on_time} onChange={(e) => updateTrip(tr, "power_on_time", e.target.value)} placeholder="--:--" className="bg-background border-red-500/20 text-white h-8 w-20 text-xs" /></td>
+                    <td className="p-2"><Input value={tr.total_off_hours} onChange={(e) => updateTrip(tr, "total_off_hours", e.target.value)} placeholder="0" className="bg-background border-red-500/20 text-white h-8 w-16 text-xs" /></td>
+                    <td className="p-2">
+                      <select value={tr.is_failure} onChange={(e) => updateTrip(tr, "is_failure", e.target.value)} className="bg-background border border-red-500/20 text-white rounded h-8 px-2 text-xs">
+                        <option value="">—</option><option value="да">да</option><option value="нет">нет</option>
+                      </select>
+                    </td>
+                    <td className="p-2">
+                      <select value={tr.is_pre_failure} onChange={(e) => updateTrip(tr, "is_pre_failure", e.target.value)} className="bg-background border border-red-500/20 text-white rounded h-8 px-2 text-xs">
+                        <option value="">—</option><option value="да">да</option><option value="нет">нет</option>
+                      </select>
+                    </td>
+                    <td className="p-2"><Input value={tr.reason} onChange={(e) => updateTrip(tr, "reason", e.target.value)} placeholder="Причина" className="bg-background border-red-500/20 text-white h-8 w-48 text-xs" /></td>
+                    <td className="p-2">
+                      <Button size="sm" variant="outline" onClick={() => deleteTrip(tr.id)} className="border-red-500/40 text-red-400 hover:bg-red-500/10 h-8 px-2">
+                        <Icon name="Trash2" size={14} />
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -471,6 +659,35 @@ export function DispatcherDashboard() {
           </>
         )}
       </section>
+
+      {/* Модальное окно переноса работы */}
+      {transferTaskId !== null && (
+        <div className="fixed inset-0 z-[10000] bg-black/80 flex items-center justify-center p-4" onClick={() => setTransferTaskId(null)}>
+          <div className="bg-card border border-red-500/30 rounded-lg p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-orbitron text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <Icon name="ArrowRightLeft" className="text-red-500" size={22} /> Перенос работы
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="font-geist text-sm text-muted-foreground mb-1 block">Новая дата выполнения</label>
+                <Input type="date" value={transferNewDate} onChange={(e) => setTransferNewDate(e.target.value)} className="bg-background border-red-500/20 text-white" />
+              </div>
+              <div>
+                <label className="font-geist text-sm text-muted-foreground mb-1 block">Причина переноса</label>
+                <Input value={transferReason} onChange={(e) => setTransferReason(e.target.value)} placeholder="Укажите причину" className="bg-background border-red-500/20 text-white" />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button onClick={submitTransfer} className="bg-red-500 hover:bg-red-600 text-white flex-1">
+                  <Icon name="Check" size={18} className="mr-2" /> Перенести
+                </Button>
+                <Button variant="outline" onClick={() => setTransferTaskId(null)} className="border-red-500/40 text-white hover:bg-red-500/10">
+                  Отмена
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

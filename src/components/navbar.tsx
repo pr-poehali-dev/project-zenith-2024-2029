@@ -30,6 +30,9 @@ export function Navbar() {
                   <a href="#tasks" className="font-geist text-white hover:text-red-500 transition-colors duration-200">
                     Суточное задание
                   </a>
+                  <a href="#unplanned" className="font-geist text-white hover:text-red-500 transition-colors duration-200">
+                    Внеплановый выезд
+                  </a>
                   <a href="#report" className="font-geist text-white hover:text-red-500 transition-colors duration-200">
                     Отчёт за сутки
                   </a>

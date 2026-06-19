@@ -361,20 +361,105 @@ def generate_sample_plan(year: int, month: int) -> bytes:
     buf.seek(0)
     return buf.read()
 
+TASK_COLS = ["id","device","section","work","planned_duration","responsible","shutdown",
+             "two_persons","voice_check","calibration","orientation","insulation_check",
+             "executor","order_number","tech_card","location","done","transfer_date",
+             "transfer_reason","car_owner","fuel_spent","transport_type","arrival_time",
+             "departure_time","power_off_time","power_on_time","total_off_hours"]
+
 def get_tasks(task_date: date):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(f"""
         SELECT id, device, section, work, planned_duration, responsible, shutdown, two_persons,
-               voice_check, calibration, orientation, insulation_check, executor, order_number
+               voice_check, calibration, orientation, insulation_check, executor, order_number,
+               tech_card, location, done, transfer_date, transfer_reason, car_owner, fuel_spent,
+               transport_type, arrival_time, departure_time, power_off_time, power_on_time, total_off_hours
         FROM {SCHEMA}.esp_daily_tasks WHERE task_date = %s ORDER BY id
     """, (task_date,))
-    cols = ["id","device","section","work","planned_duration","responsible","shutdown",
-            "two_persons","voice_check","calibration","orientation","insulation_check","executor","order_number"]
-    rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+    rows = []
+    for row in cur.fetchall():
+        d = dict(zip(TASK_COLS, row))
+        if d.get("transfer_date"):
+            d["transfer_date"] = str(d["transfer_date"])
+        rows.append(d)
     cur.close()
     conn.close()
     return rows
+
+UNPLANNED_COLS = ["id","device","location","executor","power_off_time","power_on_time",
+                  "total_off_hours","is_failure","is_pre_failure","reason"]
+
+def get_unplanned_trips(trip_date: date):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(f"""
+        SELECT id, device, location, executor, power_off_time, power_on_time,
+               total_off_hours, is_failure, is_pre_failure, reason
+        FROM {SCHEMA}.esp_unplanned_trips WHERE trip_date = %s ORDER BY id
+    """, (trip_date,))
+    rows = [dict(zip(UNPLANNED_COLS, row)) for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return rows
+
+def add_unplanned_trip(trip_date: date):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(f"""
+        INSERT INTO {SCHEMA}.esp_unplanned_trips (trip_date) VALUES (%s) RETURNING id
+    """, (trip_date,))
+    new_id = cur.fetchone()[0]
+    conn.commit()
+    cur.close()
+    conn.close()
+    return new_id
+
+def update_unplanned_trip(trip_id: int, field: str, value: str):
+    allowed = {"device","location","executor","power_off_time","power_on_time",
+               "total_off_hours","is_failure","is_pre_failure","reason"}
+    if field not in allowed:
+        return
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(f"UPDATE {SCHEMA}.esp_unplanned_trips SET {field}=%s WHERE id=%s", (value, trip_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def delete_unplanned_trip(trip_id: int):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(f"DELETE FROM {SCHEMA}.esp_unplanned_trips WHERE id=%s", (trip_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def update_task_field(task_id: int, field: str, value):
+    allowed = {"executor","order_number","tech_card","location","done","transfer_reason",
+               "car_owner","fuel_spent","transport_type","arrival_time","departure_time",
+               "power_off_time","power_on_time","total_off_hours"}
+    if field not in allowed:
+        return
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(f"UPDATE {SCHEMA}.esp_daily_tasks SET {field}=%s WHERE id=%s", (value, task_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def transfer_task(task_id: int, new_date: date, reason: str):
+    """Переносит работу на другой день."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(f"""
+        UPDATE {SCHEMA}.esp_daily_tasks
+        SET task_date=%s, transfer_date=%s, transfer_reason=%s
+        WHERE id=%s
+    """, (new_date, new_date, reason, task_id))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 def get_report(task_date: date):
     conn = get_conn()
@@ -575,12 +660,60 @@ def handler(event: dict, context) -> dict:
         data = get_monthly_report(year, month)
         return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps(data)}
 
-    # PUT ?action=update-task&id=5 — обновить ФИО и приказ
+    # PUT ?action=update-task&id=5 — обновить любое поле задания
     if method == "PUT" and action == "update-task":
         task_id = int(qs.get("id", "0"))
-        executor = body.get("executor", "")
-        order_number = body.get("order_number", "")
-        update_task_executor(task_id, executor, order_number)
+        # Старый формат — ФИО и приказ сразу
+        if "executor" in body and "order_number" in body and len(body) == 2:
+            update_task_executor(task_id, body.get("executor", ""), body.get("order_number", ""))
+        else:
+            for field, value in body.items():
+                update_task_field(task_id, field, value)
+        return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps({"ok": True})}
+
+    # PUT ?action=transfer-task&id=5 — перенести работу на другой день
+    if method == "PUT" and action == "transfer-task":
+        task_id = int(qs.get("id", "0"))
+        new_date_raw = body.get("new_date", "")
+        reason = body.get("reason", "")
+        try:
+            new_date = date.fromisoformat(new_date_raw)
+        except Exception:
+            return {"statusCode": 400, "headers": CORS_HEADERS, "body": json.dumps({"error": "Некорректная дата переноса"})}
+        transfer_task(task_id, new_date, reason)
+        return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps({"ok": True, "new_date": str(new_date)})}
+
+    # GET ?action=unplanned&date=2026-06-19 — список внеплановых выездов
+    if method == "GET" and action == "unplanned":
+        raw_date = qs.get("date", str(date.today()))
+        try:
+            trip_date = date.fromisoformat(raw_date)
+        except Exception:
+            trip_date = date.today()
+        trips = get_unplanned_trips(trip_date)
+        return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps({"trips": trips, "date": str(trip_date)})}
+
+    # POST ?action=add-unplanned&date=2026-06-19 — добавить пустую строку выезда
+    if method == "POST" and action == "add-unplanned":
+        raw_date = qs.get("date", str(date.today()))
+        try:
+            trip_date = date.fromisoformat(raw_date)
+        except Exception:
+            trip_date = date.today()
+        new_id = add_unplanned_trip(trip_date)
+        return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps({"id": new_id})}
+
+    # PUT ?action=update-unplanned&id=5 — обновить поле внепланового выезда
+    if method == "PUT" and action == "update-unplanned":
+        trip_id = int(qs.get("id", "0"))
+        for field, value in body.items():
+            update_unplanned_trip(trip_id, field, value)
+        return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps({"ok": True})}
+
+    # DELETE ?action=delete-unplanned&id=5 — удалить выезд
+    if method == "DELETE" and action == "delete-unplanned":
+        trip_id = int(qs.get("id", "0"))
+        delete_unplanned_trip(trip_id)
         return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps({"ok": True})}
 
     return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps({"status": "Диспетчер ЭСП API работает"})}
