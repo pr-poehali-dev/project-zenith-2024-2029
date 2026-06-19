@@ -3,78 +3,12 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import Icon from "@/components/ui/icon"
-
-const API_URL = "https://functions.poehali.dev/4bbcba9d-df17-4bd3-ac44-cd6918c0c0ea"
-
-type Task = {
-  id: number
-  device: string
-  section: string
-  work: string
-  planned_duration: string
-  responsible: boolean
-  shutdown: boolean
-  two_persons: boolean
-  voice_check: boolean
-  calibration: boolean
-  orientation: boolean
-  insulation_check: boolean
-  executor: string
-  order_number: string
-  tech_card: string
-  location: string
-  done: string
-  transfer_date: string | null
-  transfer_reason: string
-  car_owner: string
-  fuel_spent: string
-  transport_type: string
-  arrival_time: string
-  departure_time: string
-  power_off_time: string
-  power_on_time: string
-  total_off_hours: string
-}
-
-type Trip = {
-  id: number
-  device: string
-  location: string
-  executor: string
-  power_off_time: string
-  power_on_time: string
-  total_off_hours: string
-  is_failure: string
-  is_pre_failure: string
-  reason: string
-}
-
-type ReportItem = {
-  id: number
-  device: string
-  staff_present: boolean
-  actual_duration: string
-  matches_plan: boolean
-  calibration_done: boolean
-  calibration_result: string
-  shutdown_fact: boolean
-  deviation_notes: string
-}
+import * as api from "@/lib/api"
+import type { Task, Trip, ReportItem } from "@/lib/api"
+import { downloadSamplePlanLocal, downloadSampleStatisticsLocal } from "@/lib/offline-engine"
 
 function todayStr() {
   return new Date().toISOString().split("T")[0]
-}
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result as string
-      resolve(result.split(",")[1])
-    }
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
 }
 
 const MONTHS = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"]
@@ -99,27 +33,34 @@ export function DispatcherDashboard() {
   const [loadingBulk, setLoadingBulk] = useState(false)
   const [statusMsg, setStatusMsg] = useState("")
   const [statusErr, setStatusErr] = useState("")
+  const [online, setOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true)
   const scheduleRef = useRef<HTMLInputElement>(null)
   const statsRef = useRef<HTMLInputElement>(null)
   const bulkRef = useRef<HTMLInputElement>(null)
 
+  useEffect(() => {
+    const on = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener("online", on)
+    window.addEventListener("offline", off)
+    return () => {
+      window.removeEventListener("online", on)
+      window.removeEventListener("offline", off)
+    }
+  }, [])
+
   const loadTasks = useCallback(async () => {
-    const res = await fetch(`${API_URL}?action=tasks&date=${selectedDate}`)
-    const data = await res.json()
-    setTasks(data.tasks || [])
+    setTasks(await api.loadTasks(selectedDate))
   }, [selectedDate])
 
   const loadReport = useCallback(async () => {
-    const res = await fetch(`${API_URL}?action=report&date=${selectedDate}`)
-    const data = await res.json()
-    setReport(data.report || [])
-    setDeviations(data.deviations || 0)
+    const { report, deviations } = await api.loadReport(selectedDate)
+    setReport(report)
+    setDeviations(deviations)
   }, [selectedDate])
 
   const loadTrips = useCallback(async () => {
-    const res = await fetch(`${API_URL}?action=unplanned&date=${selectedDate}`)
-    const data = await res.json()
-    setTrips(data.trips || [])
+    setTrips(await api.loadTrips(selectedDate))
   }, [selectedDate])
 
   useEffect(() => {
@@ -134,17 +75,10 @@ export function DispatcherDashboard() {
     setStatusMsg("")
     setStatusErr("")
     try {
-      const b64 = await fileToBase64(scheduleFile)
-      const res = await fetch(`${API_URL}?action=parse-schedule`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file: b64, date: selectedDate }),
-      })
-      const data = await res.json()
-      if (data.error) { setStatusErr(data.error); return }
-      setStatusMsg(`Загружено ${data.count} работ из графика`)
-      await loadTasks()
-    } catch (e) {
+      const tasks = await api.uploadSchedule(scheduleFile, selectedDate)
+      setTasks(tasks)
+      setStatusMsg(`Загружено ${tasks.length} работ из графика`)
+    } catch {
       setStatusErr("Ошибка при загрузке файла")
     } finally {
       setLoading(false)
@@ -157,17 +91,11 @@ export function DispatcherDashboard() {
     setStatusMsg("")
     setStatusErr("")
     try {
-      const b64 = await fileToBase64(statsFile)
-      const res = await fetch(`${API_URL}?action=parse-statistics`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file: b64, date: selectedDate }),
-      })
-      const data = await res.json()
-      if (data.error) { setStatusErr(data.error); return }
-      setStatusMsg(`Отчёт сформирован: ${data.count} устройств обработано`)
-      await loadReport()
-    } catch (e) {
+      const { report, deviations } = await api.uploadStatistics(statsFile, selectedDate)
+      setReport(report)
+      setDeviations(deviations)
+      setStatusMsg(`Отчёт сформирован: ${report.length} устройств обработано`)
+    } catch {
       setStatusErr("Ошибка при загрузке файла")
     } finally {
       setLoadingReport(false)
@@ -180,15 +108,8 @@ export function DispatcherDashboard() {
     setStatusMsg("")
     setStatusErr("")
     try {
-      const b64 = await fileToBase64(bulkFile)
-      const res = await fetch(`${API_URL}?action=parse-schedule-bulk`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file: b64, year: bulkYear, month: bulkMonth }),
-      })
-      const data = await res.json()
-      if (data.error) { setStatusErr(data.error); return }
-      setStatusMsg(`Оперативный план загружен: ${data.total_tasks} работ за ${data.days} дней (${MONTHS[bulkMonth - 1]} ${bulkYear})`)
+      const { days, total } = await api.uploadScheduleBulk(bulkFile, bulkYear, bulkMonth)
+      setStatusMsg(`Оперативный план загружен: ${total} работ за ${days} дней (${MONTHS[bulkMonth - 1]} ${bulkYear})`)
       await loadTasks()
     } catch {
       setStatusErr("Ошибка при загрузке файла")
@@ -198,20 +119,16 @@ export function DispatcherDashboard() {
   }
 
   const downloadSamplePlan = () => {
-    window.open(`${API_URL}?action=sample-plan&year=${bulkYear}&month=${bulkMonth}`, "_blank")
+    downloadSamplePlanLocal(bulkYear, bulkMonth)
   }
 
   const downloadSampleStatistics = () => {
-    window.open(`${API_URL}?action=sample-statistics&year=${bulkYear}&month=${bulkMonth}`, "_blank")
+    downloadSampleStatisticsLocal(bulkYear, bulkMonth)
   }
 
   const updateTaskField = async (task: Task, field: keyof Task, value: string) => {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, [field]: value } : t)))
-    await fetch(`${API_URL}?action=update-task&id=${task.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [field]: value }),
-    })
+    await api.updateTaskField(task.id, field, value)
   }
 
   const openTransfer = (taskId: number) => {
@@ -222,34 +139,25 @@ export function DispatcherDashboard() {
 
   const submitTransfer = async () => {
     if (transferTaskId === null) return
-    await fetch(`${API_URL}?action=transfer-task&id=${transferTaskId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ new_date: transferNewDate, reason: transferReason }),
-    })
+    await api.transferTask(transferTaskId, transferNewDate, transferReason)
     setTransferTaskId(null)
     setStatusMsg(`Работа перенесена на ${new Date(transferNewDate).toLocaleDateString("ru-RU")}`)
     await loadTasks()
   }
 
   const addTrip = async () => {
-    const res = await fetch(`${API_URL}?action=add-unplanned&date=${selectedDate}`, { method: "POST" })
-    await res.json()
+    await api.addTrip(selectedDate)
     await loadTrips()
   }
 
   const updateTrip = async (trip: Trip, field: keyof Trip, value: string) => {
     setTrips((prev) => prev.map((t) => (t.id === trip.id ? { ...t, [field]: value } : t)))
-    await fetch(`${API_URL}?action=update-unplanned&id=${trip.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [field]: value }),
-    })
+    await api.updateTrip(trip.id, field, value)
   }
 
   const deleteTrip = async (tripId: number) => {
     setTrips((prev) => prev.filter((t) => t.id !== tripId))
-    await fetch(`${API_URL}?action=delete-unplanned&id=${tripId}`, { method: "DELETE" })
+    await api.deleteTrip(tripId)
   }
 
   const shiftDate = (days: number) => {
@@ -287,7 +195,20 @@ export function DispatcherDashboard() {
           <div className="flex items-center gap-3">
             <div className="h-10 w-1.5 bg-red-500 rounded-full" />
             <div>
-              <h1 className="font-orbitron text-3xl md:text-4xl font-bold text-white">Рабочее место диспетчера ЭСП</h1>
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="font-orbitron text-3xl md:text-4xl font-bold text-white">Рабочее место диспетчера ЭСП</h1>
+                <span
+                  className={`flex items-center gap-1.5 font-geist text-xs px-2.5 py-1 rounded-full border ${
+                    online
+                      ? "bg-green-500/15 text-green-400 border-green-500/30"
+                      : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30"
+                  }`}
+                  title={online ? "Есть подключение к серверу" : "Нет интернета — работа в офлайн-режиме, данные сохраняются локально"}
+                >
+                  <Icon name={online ? "Wifi" : "WifiOff"} size={14} />
+                  {online ? "Онлайн" : "Офлайн"}
+                </span>
+              </div>
               <p className="font-geist text-muted-foreground mt-1">Анализ статистики и автоматическое формирование отчётных форм за смену</p>
             </div>
           </div>
@@ -339,6 +260,16 @@ export function DispatcherDashboard() {
           ))}
         </div>
       </section>
+
+      {/* Баннер офлайн-режима */}
+      {!online && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3 font-geist text-yellow-400 flex items-center gap-2">
+            <Icon name="WifiOff" size={16} />
+            Нет интернета. Приложение работает офлайн: загрузка Excel, задания, отчёты и сводка считаются на устройстве. Все изменения сохраняются локально и отправятся на сервер при появлении сети.
+          </div>
+        </div>
+      )}
 
       {/* Сообщения */}
       {(statusMsg || statusErr) && (
