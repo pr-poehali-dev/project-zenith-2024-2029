@@ -1,9 +1,12 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Menu, X } from "lucide-react"
+import { useLocation } from "react-router-dom"
 
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false)
+  const location = useLocation()
+  const isMonthly = location.pathname === "/monthly"
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-[9999] bg-black/95 backdrop-blur-md border-b border-red-500/20">
@@ -11,32 +14,45 @@ export function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <div className="flex-shrink-0">
-            <h1 className="font-orbitron text-xl font-bold text-white">
+            <a href="/" className="font-orbitron text-xl font-bold text-white hover:opacity-80 transition-opacity">
               Диспетчер<span className="text-red-500"> ЭСП</span>
-            </h1>
+            </a>
           </div>
 
           {/* Desktop Navigation */}
           <div className="hidden md:block">
             <div className="ml-10 flex items-baseline space-x-8">
+              {!isMonthly ? (
+                <>
+                  <a href="#import" className="font-geist text-white hover:text-red-500 transition-colors duration-200">
+                    Импорт данных
+                  </a>
+                  <a href="#tasks" className="font-geist text-white hover:text-red-500 transition-colors duration-200">
+                    Суточное задание
+                  </a>
+                  <a href="#report" className="font-geist text-white hover:text-red-500 transition-colors duration-200">
+                    Отчёт за сутки
+                  </a>
+                </>
+              ) : null}
               <a
-                href="#import"
-                className="font-geist text-white hover:text-red-500 transition-colors duration-200"
+                href="/monthly"
+                className={`font-geist transition-colors duration-200 ${isMonthly ? "text-red-500" : "text-white hover:text-red-500"}`}
               >
-                Импорт данных
-              </a>
-              <a href="#tasks" className="font-geist text-white hover:text-red-500 transition-colors duration-200">
-                Суточное задание
-              </a>
-              <a href="#report" className="font-geist text-white hover:text-red-500 transition-colors duration-200">
-                Отчёт за сутки
+                Месячный отчёт
               </a>
             </div>
           </div>
 
           {/* CTA Button */}
           <div className="hidden md:block">
-            <Button className="bg-red-500 hover:bg-red-600 text-white font-geist border-0">Сформировать отчёт</Button>
+            {isMonthly ? (
+              <a href="/">
+                <Button variant="outline" className="border-red-500/40 text-white hover:bg-red-500/10 font-geist">← Суточное задание</Button>
+              </a>
+            ) : (
+              <Button className="bg-red-500 hover:bg-red-600 text-white font-geist border-0">Сформировать отчёт</Button>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -54,31 +70,28 @@ export function Navbar() {
         {isOpen && (
           <div className="md:hidden">
             <div className="px-2 pt-2 pb-3 space-y-1 bg-black/98 border-t border-red-500/20">
-              <a
-                href="#import"
-                className="block px-3 py-2 font-geist text-white hover:text-red-500 transition-colors duration-200"
-                onClick={() => setIsOpen(false)}
-              >
-                Импорт данных
-              </a>
-              <a
-                href="#tasks"
-                className="block px-3 py-2 font-geist text-white hover:text-red-500 transition-colors duration-200"
-                onClick={() => setIsOpen(false)}
-              >
-                Суточное задание
-              </a>
-              <a
-                href="#report"
-                className="block px-3 py-2 font-geist text-white hover:text-red-500 transition-colors duration-200"
-                onClick={() => setIsOpen(false)}
-              >
-                Отчёт за сутки
+              {!isMonthly && (
+                <>
+                  <a href="#import" className="block px-3 py-2 font-geist text-white hover:text-red-500 transition-colors duration-200" onClick={() => setIsOpen(false)}>
+                    Импорт данных
+                  </a>
+                  <a href="#tasks" className="block px-3 py-2 font-geist text-white hover:text-red-500 transition-colors duration-200" onClick={() => setIsOpen(false)}>
+                    Суточное задание
+                  </a>
+                  <a href="#report" className="block px-3 py-2 font-geist text-white hover:text-red-500 transition-colors duration-200" onClick={() => setIsOpen(false)}>
+                    Отчёт за сутки
+                  </a>
+                </>
+              )}
+              <a href="/monthly" className="block px-3 py-2 font-geist text-red-500 hover:text-red-400 transition-colors duration-200" onClick={() => setIsOpen(false)}>
+                Месячный отчёт
               </a>
               <div className="px-3 py-2">
-                <Button className="w-full bg-red-500 hover:bg-red-600 text-white font-geist border-0">
-                  Сформировать отчёт
-                </Button>
+                {isMonthly ? (
+                  <a href="/"><Button variant="outline" className="w-full border-red-500/40 text-white font-geist">← Суточное задание</Button></a>
+                ) : (
+                  <Button className="w-full bg-red-500 hover:bg-red-600 text-white font-geist border-0">Сформировать отчёт</Button>
+                )}
               </div>
             </div>
           </div>

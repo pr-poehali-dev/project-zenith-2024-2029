@@ -265,6 +265,56 @@ def get_report(task_date: date):
     conn.close()
     return rows
 
+def get_monthly_report(year: int, month: int):
+    """Сводный месячный отчёт: агрегация по устройствам за все сутки месяца."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(f"""
+        SELECT
+            r.device,
+            COUNT(DISTINCT r.report_date) AS days_worked,
+            COUNT(r.id) AS total_records,
+            SUM(CASE WHEN r.matches_plan THEN 1 ELSE 0 END) AS matches_plan_count,
+            SUM(CASE WHEN NOT r.matches_plan THEN 1 ELSE 0 END) AS deviations_count,
+            SUM(CASE WHEN r.staff_present THEN 1 ELSE 0 END) AS staff_present_days,
+            SUM(CASE WHEN r.calibration_done THEN 1 ELSE 0 END) AS calibrations_done,
+            SUM(CASE WHEN r.shutdown_fact THEN 1 ELSE 0 END) AS shutdowns_count,
+            array_agg(DISTINCT r.report_date ORDER BY r.report_date) AS work_dates,
+            array_agg(r.deviation_notes) FILTER (WHERE r.deviation_notes != '') AS all_deviations
+        FROM {SCHEMA}.esp_reports r
+        WHERE EXTRACT(YEAR FROM r.report_date) = %s
+          AND EXTRACT(MONTH FROM r.report_date) = %s
+        GROUP BY r.device
+        ORDER BY r.device
+    """, (year, month))
+    cols = ["device","days_worked","total_records","matches_plan_count","deviations_count",
+            "staff_present_days","calibrations_done","shutdowns_count","work_dates","all_deviations"]
+    rows = []
+    for row in cur.fetchall():
+        d = dict(zip(cols, row))
+        d["work_dates"] = [str(x) for x in (d["work_dates"] or [])]
+        d["all_deviations"] = [x for x in (d["all_deviations"] or []) if x]
+        total = d["total_records"] or 1
+        d["plan_percent"] = round(d["matches_plan_count"] / total * 100)
+        rows.append(d)
+
+    cur.execute(f"""
+        SELECT COUNT(DISTINCT report_date) FROM {SCHEMA}.esp_reports
+        WHERE EXTRACT(YEAR FROM report_date) = %s AND EXTRACT(MONTH FROM report_date) = %s
+    """, (year, month))
+    total_days = cur.fetchone()[0] or 0
+
+    cur.execute(f"""
+        SELECT COUNT(*) FROM {SCHEMA}.esp_reports
+        WHERE EXTRACT(YEAR FROM report_date) = %s AND EXTRACT(MONTH FROM report_date) = %s
+          AND NOT matches_plan
+    """, (year, month))
+    total_deviations = cur.fetchone()[0] or 0
+
+    cur.close()
+    conn.close()
+    return {"rows": rows, "total_days": total_days, "total_deviations": total_deviations}
+
 def update_task_executor(task_id: int, executor: str, order_number: str):
     conn = get_conn()
     cur = conn.cursor()
@@ -353,6 +403,13 @@ def handler(event: dict, context) -> dict:
             return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps({"records": records, "count": len(records), "date": str(task_date)})}
         except Exception as e:
             return {"statusCode": 500, "headers": CORS_HEADERS, "body": json.dumps({"error": str(e)})}
+
+    # GET ?action=monthly-report&year=2026&month=6
+    if method == "GET" and action == "monthly-report":
+        year = int(qs.get("year", str(date.today().year)))
+        month = int(qs.get("month", str(date.today().month)))
+        data = get_monthly_report(year, month)
+        return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps(data)}
 
     # PUT ?action=update-task&id=5 — обновить ФИО и приказ
     if method == "PUT" and action == "update-task":
