@@ -1,11 +1,31 @@
 // Service Worker для офлайн-режима диспетчера ЭСП
-const CACHE = "esp-dispatcher-v1"
+const CACHE = "esp-dispatcher-v2"
 const APP_SHELL = ["/", "/index.html"]
 
 self.addEventListener("install", (event) => {
   self.skipWaiting()
   event.waitUntil(
     caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL).catch(() => {}))
+  )
+})
+
+// Фоновая предзагрузка всех ассетов приложения (по списку от страницы).
+// Гарантирует, что офлайн заработает с первого онлайн-захода на любом устройстве.
+self.addEventListener("message", (event) => {
+  const data = event.data
+  if (!data || data.type !== "PRECACHE" || !Array.isArray(data.urls)) return
+  event.waitUntil(
+    caches.open(CACHE).then((cache) =>
+      Promise.all(
+        data.urls.map((u) =>
+          cache.match(u).then((hit) =>
+            hit ? undefined : fetch(u, { cache: "no-cache" })
+              .then((res) => (res && res.ok ? cache.put(u, res.clone()) : undefined))
+              .catch(() => {})
+          )
+        )
+      )
+    )
   )
 })
 

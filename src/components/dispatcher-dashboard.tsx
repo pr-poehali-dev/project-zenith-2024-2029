@@ -34,6 +34,7 @@ export function DispatcherDashboard() {
   const [statusMsg, setStatusMsg] = useState("")
   const [statusErr, setStatusErr] = useState("")
   const [online, setOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true)
+  const [offlineReady, setOfflineReady] = useState(false)
   const scheduleRef = useRef<HTMLInputElement>(null)
   const statsRef = useRef<HTMLInputElement>(null)
   const bulkRef = useRef<HTMLInputElement>(null)
@@ -47,6 +48,20 @@ export function DispatcherDashboard() {
       window.removeEventListener("online", on)
       window.removeEventListener("offline", off)
     }
+  }, [])
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return
+    let timer: ReturnType<typeof setTimeout>
+    navigator.serviceWorker.ready.then((reg) => {
+      if (reg.active) {
+        timer = setTimeout(() => {
+          setOfflineReady(true)
+          setTimeout(() => setOfflineReady(false), 6000)
+        }, 1500)
+      }
+    }).catch(() => {})
+    return () => clearTimeout(timer)
   }, [])
 
   const loadTasks = useCallback(async () => {
@@ -267,6 +282,16 @@ export function DispatcherDashboard() {
           <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3 font-geist text-yellow-400 flex items-center gap-2">
             <Icon name="WifiOff" size={16} />
             Нет интернета. Приложение работает офлайн: загрузка Excel, задания, отчёты и сводка считаются на устройстве. Все изменения сохраняются локально и отправятся на сервер при появлении сети.
+          </div>
+        </div>
+      )}
+
+      {/* Уведомление: приложение готово к офлайн-работе */}
+      {offlineReady && online && (
+        <div className="fixed bottom-5 right-5 z-[9999] max-w-sm animate-in fade-in slide-in-from-bottom-4">
+          <div className="bg-card border border-green-500/40 rounded-lg px-4 py-3 font-geist text-sm text-green-400 flex items-start gap-2 shadow-lg shadow-black/40">
+            <Icon name="DownloadCloud" size={18} className="mt-0.5 shrink-0" />
+            <span>Приложение сохранено на устройстве. Теперь оно открывается и работает даже без интернета — можно поделиться ссылкой с коллегами.</span>
           </div>
         </div>
       )}
