@@ -1,0 +1,28 @@
+{
+  "tests": [
+    {
+      "name": "Health check",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"status": "Диспетчер ЭСП API работает"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET tasks today",
+      "method": "GET",
+      "path": "/?action=tasks",
+      "expectedStatus": 200,
+      "expectedBody": {"tasks": []},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET report today",
+      "method": "GET",
+      "path": "/?action=report",
+      "expectedStatus": 200,
+      "expectedBody": {"report": []},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
