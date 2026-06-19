@@ -427,3 +427,103 @@ export function downloadSampleStatisticsLocal(year: number, month: number): void
   }
   aoaToFile(aoa, `statistika_${year}_${String(month).padStart(2, "0")}`)
 }
+
+export type ExportTrip = {
+  device: string
+  location: string
+  executor: string
+  power_off_time: string
+  power_on_time: string
+  total_off_hours: string
+  is_failure: string
+  is_pre_failure: string
+  reason: string
+}
+
+function yn(b: boolean): string {
+  return b ? "Да" : "Нет"
+}
+
+/** Формирует и скачивает сменный отчёт в Excel: сводка + отклонения + выезды */
+export function exportShiftReport(
+  date: string,
+  report: ReportItem[],
+  trips: ExportTrip[],
+): void {
+  const wb = XLSX.utils.book_new()
+  const [y, m, d] = date.split("-")
+  const dateLabel = `${d}.${m}.${y}`
+
+  // Лист 1 — Сводка
+  const total = report.length
+  const matches = report.filter((r) => r.matches_plan).length
+  const deviations = total - matches
+  const compliance = total ? Math.round((matches / total) * 100) : 0
+  const summary: (string | number)[][] = [
+    ["Сменный отчёт диспетчера ЭСП"],
+    ["Дата смены", dateLabel],
+    [],
+    ["Показатель", "Значение"],
+    ["Всего устройств в отчёте", total],
+    ["Соответствуют плану", matches],
+    ["Отклонений", deviations],
+    ["Соответствие плану, %", compliance],
+    ["Персонал присутствовал", report.filter((r) => r.staff_present).length],
+    ["Калибровок ПУ выполнено", report.filter((r) => r.calibration_done).length],
+    ["Калибровка с отклонением", report.filter((r) => r.calibration_result === "Отклонение").length],
+    ["Факт выключений", report.filter((r) => r.shutdown_fact).length],
+    ["Внеплановых выездов", trips.length],
+    ["Отказов", trips.filter((t) => t.is_failure === "да").length],
+    ["Предотказов", trips.filter((t) => t.is_pre_failure === "да").length],
+  ]
+  const wsSummary = XLSX.utils.aoa_to_sheet(summary)
+  wsSummary["!cols"] = [{ wch: 32 }, { wch: 16 }]
+  XLSX.utils.book_append_sheet(wb, wsSummary, "Сводка")
+
+  // Лист 2 — Отчёт по устройствам
+  const repHeaders = [
+    "Устройство", "Персонал", "Время работ (факт)", "Соответствие плану",
+    "Калибровка ПУ", "Результат калибровки", "Факт выключения", "Отклонения",
+  ]
+  const repRows: (string | number)[][] = [repHeaders]
+  for (const r of report) {
+    repRows.push([
+      r.device,
+      r.staff_present ? "Был" : "Отсутствовал",
+      r.actual_duration,
+      r.matches_plan ? "Соответствует" : "Отклонение",
+      yn(r.calibration_done),
+      r.calibration_result,
+      r.shutdown_fact ? "Выключено" : "—",
+      r.deviation_notes || "—",
+    ])
+  }
+  const wsReport = XLSX.utils.aoa_to_sheet(repRows)
+  wsReport["!cols"] = [
+    { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 18 },
+    { wch: 14 }, { wch: 20 }, { wch: 16 }, { wch: 44 },
+  ]
+  XLSX.utils.book_append_sheet(wb, wsReport, "Отчёт по устройствам")
+
+  // Лист 3 — Внеплановые выезды
+  const tripHeaders = [
+    "Устройство", "Расположение", "ФИО исполнителя", "Время откл.",
+    "Время вкл.", "Итого откл. (ч)", "Отказ", "Предотказ", "Причина",
+  ]
+  const tripRows: (string | number)[][] = [tripHeaders]
+  for (const t of trips) {
+    tripRows.push([
+      t.device || "—", t.location || "—", t.executor || "—",
+      t.power_off_time || "—", t.power_on_time || "—", t.total_off_hours || "—",
+      t.is_failure || "—", t.is_pre_failure || "—", t.reason || "—",
+    ])
+  }
+  const wsTrips = XLSX.utils.aoa_to_sheet(tripRows)
+  wsTrips["!cols"] = [
+    { wch: 16 }, { wch: 18 }, { wch: 22 }, { wch: 12 },
+    { wch: 12 }, { wch: 14 }, { wch: 8 }, { wch: 10 }, { wch: 40 },
+  ]
+  XLSX.utils.book_append_sheet(wb, wsTrips, "Внеплановые выезды")
+
+  XLSX.writeFile(wb, `smennyy_otchet_${y}_${m}_${d}.xlsx`)
+}

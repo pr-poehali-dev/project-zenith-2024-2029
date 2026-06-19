@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import Icon from "@/components/ui/icon"
 import * as api from "@/lib/api"
 import type { Task, Trip, ReportItem } from "@/lib/api"
-import { downloadSamplePlanLocal, downloadSampleStatisticsLocal } from "@/lib/offline-engine"
+import { downloadSamplePlanLocal, downloadSampleStatisticsLocal, exportShiftReport } from "@/lib/offline-engine"
 
 function todayStr() {
   return new Date().toISOString().split("T")[0]
@@ -140,6 +140,12 @@ export function DispatcherDashboard() {
 
   const downloadSampleStatistics = () => {
     downloadSampleStatisticsLocal(bulkYear, bulkMonth)
+  }
+
+  const handleExportReport = () => {
+    if (report.length === 0) { setStatusErr("Нет данных отчёта для выгрузки"); return }
+    exportShiftReport(selectedDate, report, trips)
+    setStatusMsg("Сменный отчёт выгружен в Excel")
   }
 
   const updateTaskField = async (task: Task, field: keyof Task, value: string) => {
@@ -733,10 +739,10 @@ export function DispatcherDashboard() {
               </table>
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Button className="bg-red-500 hover:bg-red-600 text-white px-6">
+              <Button onClick={handleExportReport} className="bg-red-500 hover:bg-red-600 text-white px-6">
                 <Icon name="Download" size={18} className="mr-2" /> Выгрузить отчёт в Excel
               </Button>
-              <Button variant="outline" className="border-red-500/40 text-white hover:bg-red-500/10 px-6">
+              <Button onClick={() => window.print()} variant="outline" className="border-red-500/40 text-white hover:bg-red-500/10 px-6">
                 <Icon name="Printer" size={18} className="mr-2" /> Печать
               </Button>
             </div>
