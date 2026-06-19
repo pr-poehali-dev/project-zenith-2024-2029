@@ -261,6 +261,20 @@ export function DispatcherDashboard() {
   const responsibleCount = tasks.filter((t) => t.responsible).length
   const shutdownCount = tasks.filter((t) => t.shutdown).length
 
+  const summary = {
+    total: report.length,
+    matchesPlan: report.filter((r) => r.matches_plan).length,
+    deviations: report.filter((r) => !r.matches_plan).length,
+    staffPresent: report.filter((r) => r.staff_present).length,
+    calibrations: report.filter((r) => r.calibration_done).length,
+    calibrationFails: report.filter((r) => r.calibration_result === "Отклонение").length,
+    shutdowns: report.filter((r) => r.shutdown_fact).length,
+    trips: trips.length,
+    failures: trips.filter((t) => t.is_failure === "да").length,
+    preFailures: trips.filter((t) => t.is_pre_failure === "да").length,
+  }
+  const compliancePct = summary.total ? Math.round((summary.matchesPlan / summary.total) * 100) : 0
+
   return (
     <div className="bg-black min-h-screen pt-16">
       {/* Заголовок */}
@@ -630,6 +644,41 @@ export function DispatcherDashboard() {
           </div>
         ) : (
           <>
+            {/* Сводка за сутки */}
+            <div className="mb-6 bg-card border border-red-500/20 rounded-lg p-5">
+              <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+                <h3 className="font-orbitron text-lg font-bold text-white flex items-center gap-2">
+                  <Icon name="ChartColumn" className="text-red-500" size={20} /> Сводка за {dayLabel}
+                </h3>
+                <div className="flex items-center gap-2">
+                  <span className="font-geist text-sm text-muted-foreground">Соответствие плану</span>
+                  <span className={`font-orbitron text-2xl font-bold ${compliancePct >= 90 ? "text-green-400" : compliancePct >= 70 ? "text-yellow-400" : "text-red-400"}`}>
+                    {compliancePct}%
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                {[
+                  { label: "Всего устройств", value: summary.total, icon: "Cpu", color: "text-white" },
+                  { label: "Соответствуют плану", value: summary.matchesPlan, icon: "CircleCheck", color: "text-green-400" },
+                  { label: "Отклонений", value: summary.deviations, icon: "TriangleAlert", color: "text-red-400" },
+                  { label: "Персонал был", value: summary.staffPresent, icon: "DoorOpen", color: "text-white" },
+                  { label: "Калибровок ПУ", value: summary.calibrations, icon: "Crosshair", color: "text-white" },
+                  { label: "Калибровка: брак", value: summary.calibrationFails, icon: "CircleX", color: "text-red-400" },
+                  { label: "Факт выключений", value: summary.shutdowns, icon: "PowerOff", color: "text-orange-400" },
+                  { label: "Внеплановых выездов", value: summary.trips, icon: "Siren", color: "text-white" },
+                  { label: "Отказов", value: summary.failures, icon: "CircleAlert", color: "text-red-400" },
+                  { label: "Предотказов", value: summary.preFailures, icon: "CircleDashed", color: "text-yellow-400" },
+                ].map((s) => (
+                  <div key={s.label} className="bg-background border border-red-500/10 rounded-lg p-3">
+                    <Icon name={s.icon} className="text-red-500 mb-1" size={18} />
+                    <div className={`font-orbitron text-2xl font-bold ${s.color}`}>{s.value}</div>
+                    <div className="font-geist text-xs text-muted-foreground mt-0.5">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="overflow-x-auto bg-card border border-red-500/20 rounded-lg">
               <table className="w-full text-sm">
                 <thead>
