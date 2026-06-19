@@ -248,6 +248,16 @@ export function DispatcherDashboard() {
     await fetch(`${API_URL}?action=delete-unplanned&id=${tripId}`, { method: "DELETE" })
   }
 
+  const shiftDate = (days: number) => {
+    const d = new Date(selectedDate)
+    d.setDate(d.getDate() + days)
+    setSelectedDate(d.toISOString().slice(0, 10))
+  }
+
+  const dayLabel = new Date(selectedDate).toLocaleDateString("ru-RU", {
+    weekday: "short", day: "numeric", month: "long",
+  })
+
   const responsibleCount = tasks.filter((t) => t.responsible).length
   const shutdownCount = tasks.filter((t) => t.shutdown).length
 
@@ -263,14 +273,35 @@ export function DispatcherDashboard() {
               <p className="font-geist text-muted-foreground mt-1">Анализ статистики и автоматическое формирование отчётных форм за смену</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Icon name="Calendar" className="text-red-500" size={18} />
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-card border-red-500/30 text-white w-44"
-            />
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => shiftDate(-1)}
+                className="border-red-500/30 text-white hover:bg-red-500/10 h-9 w-9 shrink-0"
+                title="Предыдущий день"
+              >
+                <Icon name="ChevronLeft" size={18} />
+              </Button>
+              <Icon name="Calendar" className="text-red-500" size={18} />
+              <Input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-card border-red-500/30 text-white w-44"
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => shiftDate(1)}
+                className="border-red-500/30 text-white hover:bg-red-500/10 h-9 w-9 shrink-0"
+                title="Следующий день"
+              >
+                <Icon name="ChevronRight" size={18} />
+              </Button>
+            </div>
+            <span className="font-geist text-xs text-muted-foreground capitalize pr-11">{dayLabel}</span>
           </div>
         </div>
         <div className="flex flex-wrap gap-4">
