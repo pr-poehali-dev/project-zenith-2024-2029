@@ -620,3 +620,69 @@ export function exportMonthlyReport(
 
   XLSX.writeFile(wb, `mesyachnaya_svodka_${year}_${String(month).padStart(2, "0")}.xlsx`)
 }
+
+export type MonthDeviceRow = {
+  device: string
+  days_worked: number
+  total_records: number
+  matches_plan_count: number
+  deviations_count: number
+  staff_present_days: number
+  calibrations_done: number
+  shutdowns_count: number
+  plan_percent: number
+  all_deviations?: string[]
+}
+
+/** Выгружает агрегированную сводку по устройствам за месяц (данные с сервера) в Excel */
+export function exportMonthlySummary(
+  year: number,
+  month: number,
+  rows: MonthDeviceRow[],
+): void {
+  const wb = XLSX.utils.book_new()
+  const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`
+
+  // Лист 1 — Итоги
+  const totalDev = rows.reduce((s, r) => s + r.deviations_count, 0)
+  const avgPlan = rows.length ? Math.round(rows.reduce((s, r) => s + r.plan_percent, 0) / rows.length) : 0
+  const summary: (string | number)[][] = [
+    ["Месячный отчёт диспетчера ЭСП"],
+    ["Период", monthLabel],
+    [],
+    ["Показатель", "Значение"],
+    ["Устройств в отчёте", rows.length],
+    ["Среднее выполнение плана, %", avgPlan],
+    ["Отклонений за месяц", totalDev],
+    ["Калибровок выполнено", rows.reduce((s, r) => s + r.calibrations_done, 0)],
+    ["Выключений за месяц", rows.reduce((s, r) => s + r.shutdowns_count, 0)],
+  ]
+  const wsSummary = XLSX.utils.aoa_to_sheet(summary)
+  wsSummary["!cols"] = [{ wch: 30 }, { wch: 16 }]
+  XLSX.utils.book_append_sheet(wb, wsSummary, "Итоги")
+
+  // Лист 2 — По устройствам
+  const headers = [
+    "Устройство", "Суток в работе", "Записей", "Выполнено по плану",
+    "Отклонений", "Выполнение плана, %", "Персонал (суток)",
+    "Калибровок", "Выключений", "Замечания",
+  ]
+  const aoa: (string | number)[][] = [headers]
+  const sorted = [...rows].sort((a, b) => b.deviations_count - a.deviations_count)
+  for (const r of sorted) {
+    aoa.push([
+      r.device, r.days_worked, r.total_records, r.matches_plan_count,
+      r.deviations_count, r.plan_percent, r.staff_present_days,
+      r.calibrations_done, r.shutdowns_count,
+      (r.all_deviations && r.all_deviations.length) ? r.all_deviations.join("; ") : "—",
+    ])
+  }
+  const wsDev = XLSX.utils.aoa_to_sheet(aoa)
+  wsDev["!cols"] = [
+    { wch: 16 }, { wch: 14 }, { wch: 9 }, { wch: 18 }, { wch: 11 },
+    { wch: 18 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 44 },
+  ]
+  XLSX.utils.book_append_sheet(wb, wsDev, "По устройствам")
+
+  XLSX.writeFile(wb, `mesyachnyy_otchet_${year}_${String(month).padStart(2, "0")}.xlsx`)
+}

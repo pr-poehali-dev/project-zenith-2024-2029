@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import Icon from "@/components/ui/icon"
 import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
+import { exportMonthlySummary } from "@/lib/offline-engine"
 
 const API_URL = "https://functions.poehali.dev/4bbcba9d-df17-4bd3-ac44-cd6918c0c0ea"
 
@@ -54,6 +55,12 @@ export default function MonthlyReport() {
   useEffect(() => { load() }, [load])
 
   const rows = data?.rows || []
+
+  const handleDownload = () => {
+    if (rows.length === 0) return
+    exportMonthlySummary(year, month, rows)
+  }
+
   const totalDevices = rows.length
   const avgPlan = rows.length ? Math.round(rows.reduce((s, r) => s + r.plan_percent, 0) / rows.length) : 0
   const totalCal = rows.reduce((s, r) => s + r.calibrations_done, 0)
@@ -124,7 +131,7 @@ export default function MonthlyReport() {
               <Icon name="TableProperties" className="text-red-500" size={24} />
               Сводка по устройствам — {MONTHS[month - 1]} {year}
             </h2>
-            <Button className="bg-red-500 hover:bg-red-600 text-white">
+            <Button onClick={handleDownload} disabled={rows.length === 0} className="bg-red-500 hover:bg-red-600 text-white">
               <Icon name="Download" size={18} className="mr-2" /> Скачать Excel
             </Button>
           </div>
