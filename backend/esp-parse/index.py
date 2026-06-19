@@ -42,6 +42,30 @@ def classify_work(work_text: str):
     insulation_check = any(k in t for k in INSULATION_KEYWORDS)
     return responsible, shutdown, two_persons, voice_check, calibration, orientation, insulation_check
 
+def _find_columns(rows):
+    """Ищет индексы колонок в заголовочной строке."""
+    col_device = col_section = col_work = col_planned = col_date = None
+    header_row = 0
+    for i, row in enumerate(rows[:15]):
+        row_lower = [str(c).lower().strip() if c else "" for c in row]
+        for j, cell in enumerate(row_lower):
+            if "устройств" in cell:
+                col_device = j
+            if "участок" in cell or "секция" in cell:
+                col_section = j
+            if ("работ" in cell and "перечень" in cell) or "наименование работ" in cell or "вид работ" in cell:
+                col_work = j
+            if "продолжительност" in cell or ("план" in cell and "дат" not in cell):
+                col_planned = j
+            if "дата" in cell:
+                col_date = j
+        if col_device is not None:
+            header_row = i
+            break
+    if col_device is None:
+        col_device, col_section, col_work, col_planned = 0, 1, 2, 3
+    return header_row, col_device, col_section, col_work, col_planned, col_date
+
 def parse_schedule_excel(wb: openpyxl.Workbook, target_date: date):
     """Парсит график техпроцесса, ищет работы на указанную дату."""
     tasks = []
@@ -50,29 +74,7 @@ def parse_schedule_excel(wb: openpyxl.Workbook, target_date: date):
     if not rows:
         return tasks
 
-    # Ищем заголовочную строку
-    header_row = 0
-    col_device = col_section = col_work = col_planned = col_date = None
-    for i, row in enumerate(rows[:10]):
-        row_lower = [str(c).lower().strip() if c else "" for c in row]
-        for j, cell in enumerate(row_lower):
-            if "устройств" in cell:
-                col_device = j
-            if "участок" in cell or "секция" in cell:
-                col_section = j
-            if "работ" in cell and "перечень" in cell:
-                col_work = j
-            if "продолжительност" in cell or "план" in cell:
-                col_planned = j
-            if "дата" in cell:
-                col_date = j
-        if col_device is not None:
-            header_row = i
-            break
-
-    # Если нет явного заголовка — берём первые 4 колонки
-    if col_device is None:
-        col_device, col_section, col_work, col_planned = 0, 1, 2, 3
+    header_row, col_device, col_section, col_work, col_planned, col_date = _find_columns(rows)
 
     for row in rows[header_row + 1:]:
         if not any(row):
@@ -91,10 +93,12 @@ def parse_schedule_excel(wb: openpyxl.Workbook, target_date: date):
             if isinstance(val, (datetime, date)):
                 row_date = val.date() if isinstance(val, datetime) else val
             else:
-                try:
-                    row_date = datetime.strptime(str(val).strip(), "%d.%m.%Y").date()
-                except Exception:
-                    pass
+                for fmt in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
+                    try:
+                        row_date = datetime.strptime(str(val).strip(), fmt).date()
+                        break
+                    except Exception:
+                        pass
 
         if col_date is not None and row_date and row_date != target_date:
             continue
@@ -116,6 +120,76 @@ def parse_schedule_excel(wb: openpyxl.Workbook, target_date: date):
             "order_number": "",
         })
     return tasks
+
+def parse_schedule_excel_bulk(wb: openpyxl.Workbook, year: int, month: int):
+    """
+    Парсит весь оперативный план за указанный год и месяц.
+    Возвращает dict: {date: [tasks]} сгруппированный по датам.
+    Если колонки дат нет — все записи относятся к первому дню периода.
+    """
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return {}
+
+    header_row, col_device, col_section, col_work, col_planned, col_date = _find_columns(rows)
+
+    from calendar import monthrange
+    days_in_month = monthrange(year, month)[1]
+    fallback_date = date(year, month, 1)
+
+    tasks_by_date: dict = {}
+
+    for row in rows[header_row + 1:]:
+        if not any(row):
+            continue
+        device = str(row[col_device]).strip() if col_device is not None and row[col_device] else ""
+        section = str(row[col_section]).strip() if col_section is not None and row[col_section] else ""
+        work = str(row[col_work]).strip() if col_work is not None and row[col_work] else ""
+        planned = str(row[col_planned]).strip() if col_planned is not None and row[col_planned] else ""
+
+        if not device or not work or device == "None":
+            continue
+
+        row_date = None
+        if col_date is not None and row[col_date]:
+            val = row[col_date]
+            if isinstance(val, (datetime, date)):
+                row_date = val.date() if isinstance(val, datetime) else val
+            else:
+                for fmt in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
+                    try:
+                        row_date = datetime.strptime(str(val).strip(), fmt).date()
+                        break
+                    except Exception:
+                        pass
+
+        # Фильтруем: только нужный год и месяц
+        if row_date:
+            if row_date.year != year or row_date.month != month:
+                continue
+        else:
+            row_date = fallback_date
+
+        resp, shut, two, voice, cal, ori, ins = classify_work(work)
+        task = {
+            "device": device,
+            "section": section,
+            "work": work,
+            "planned_duration": planned or "—",
+            "responsible": resp,
+            "shutdown": shut,
+            "two_persons": two,
+            "voice_check": voice,
+            "calibration": cal,
+            "orientation": ori,
+            "insulation_check": ins,
+            "executor": "",
+            "order_number": "",
+        }
+        tasks_by_date.setdefault(str(row_date), []).append(task)
+
+    return tasks_by_date
 
 def parse_statistics_excel(wb: openpyxl.Workbook):
     """Парсит выгрузку ПО Статистика. Возвращает список устройств с фактическими данными."""
@@ -362,6 +436,27 @@ def handler(event: dict, context) -> dict:
         tasks = get_tasks(task_date)
         deviations = sum(1 for r in report if not r["matches_plan"])
         return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"}, "body": json.dumps({"report": report, "tasks": tasks, "deviations": deviations, "date": str(task_date)})}
+
+    # POST ?action=parse-schedule-bulk — загрузка оперативного плана за год/месяц целиком
+    if method == "POST" and action == "parse-schedule-bulk":
+        file_b64 = body.get("file")
+        year = int(body.get("year", date.today().year))
+        month = int(body.get("month", date.today().month))
+        if not file_b64:
+            return {"statusCode": 400, "headers": CORS_HEADERS, "body": json.dumps({"error": "Файл не передан"})}
+        try:
+            file_bytes = base64.b64decode(file_b64)
+            wb = openpyxl.load_workbook(io.BytesIO(file_bytes))
+            tasks_by_date = parse_schedule_excel_bulk(wb, year, month)
+            total = 0
+            for d_str, tasks in tasks_by_date.items():
+                task_date = date.fromisoformat(d_str)
+                save_tasks(tasks, task_date)
+                total += len(tasks)
+            return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
+                    "body": json.dumps({"days": len(tasks_by_date), "total_tasks": total, "year": year, "month": month})}
+        except Exception as e:
+            return {"statusCode": 500, "headers": CORS_HEADERS, "body": json.dumps({"error": str(e)})}
 
     # POST ?action=parse-schedule — разбор графика техпроцесса
     if method == "POST" and action == "parse-schedule":

@@ -51,19 +51,27 @@ function fileToBase64(file: File): Promise<string> {
   })
 }
 
+const MONTHS = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"]
+
 export function DispatcherDashboard() {
+  const now = new Date()
   const [selectedDate, setSelectedDate] = useState(todayStr())
   const [tasks, setTasks] = useState<Task[]>([])
   const [report, setReport] = useState<ReportItem[]>([])
   const [deviations, setDeviations] = useState(0)
   const [scheduleFile, setScheduleFile] = useState<File | null>(null)
   const [statsFile, setStatsFile] = useState<File | null>(null)
+  const [bulkFile, setBulkFile] = useState<File | null>(null)
+  const [bulkYear, setBulkYear] = useState(now.getFullYear())
+  const [bulkMonth, setBulkMonth] = useState(now.getMonth() + 1)
   const [loading, setLoading] = useState(false)
   const [loadingReport, setLoadingReport] = useState(false)
+  const [loadingBulk, setLoadingBulk] = useState(false)
   const [statusMsg, setStatusMsg] = useState("")
   const [statusErr, setStatusErr] = useState("")
   const scheduleRef = useRef<HTMLInputElement>(null)
   const statsRef = useRef<HTMLInputElement>(null)
+  const bulkRef = useRef<HTMLInputElement>(null)
 
   const loadTasks = useCallback(async () => {
     const res = await fetch(`${API_URL}?action=tasks&date=${selectedDate}`)
@@ -126,6 +134,29 @@ export function DispatcherDashboard() {
       setStatusErr("Ошибка при загрузке файла")
     } finally {
       setLoadingReport(false)
+    }
+  }
+
+  const handleParseBulk = async () => {
+    if (!bulkFile) { setStatusErr("Выберите файл оперативного плана"); return }
+    setLoadingBulk(true)
+    setStatusMsg("")
+    setStatusErr("")
+    try {
+      const b64 = await fileToBase64(bulkFile)
+      const res = await fetch(`${API_URL}?action=parse-schedule-bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: b64, year: bulkYear, month: bulkMonth }),
+      })
+      const data = await res.json()
+      if (data.error) { setStatusErr(data.error); return }
+      setStatusMsg(`Оперативный план загружен: ${data.total_tasks} работ за ${data.days} дней (${MONTHS[bulkMonth - 1]} ${bulkYear})`)
+      await loadTasks()
+    } catch {
+      setStatusErr("Ошибка при загрузке файла")
+    } finally {
+      setLoadingBulk(false)
     }
   }
 
@@ -203,12 +234,57 @@ export function DispatcherDashboard() {
         <h2 className="font-orbitron text-2xl font-bold text-white mb-6 flex items-center gap-3">
           <Icon name="Upload" className="text-red-500" size={24} /> Шаг 1. Импорт исходных данных
         </h2>
+        {/* Загрузка оперативного плана за месяц */}
+        <div className="bg-card border border-red-500/30 rounded-lg p-6 mb-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Icon name="CalendarSearch" className="text-red-500" size={28} />
+            <div>
+              <h3 className="font-geist text-lg font-semibold text-white">Оперативный план на месяц</h3>
+              <p className="font-geist text-sm text-muted-foreground">Загрузите Excel-файл плана — все работы за выбранный период сохранятся автоматически</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="font-geist text-xs text-muted-foreground mb-1 block">Год</label>
+              <Input
+                type="number"
+                value={bulkYear}
+                onChange={(e) => setBulkYear(Number(e.target.value))}
+                className="bg-background border-red-500/20 text-white w-24"
+                min={2020} max={2099}
+              />
+            </div>
+            <div>
+              <label className="font-geist text-xs text-muted-foreground mb-1 block">Месяц</label>
+              <select
+                value={bulkMonth}
+                onChange={(e) => setBulkMonth(Number(e.target.value))}
+                className="bg-background border border-red-500/20 text-white rounded-md px-3 h-10 font-geist text-sm"
+              >
+                {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+              </select>
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <label className="font-geist text-xs text-muted-foreground mb-1 block">Файл плана (.xlsx)</label>
+              <input ref={bulkRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => setBulkFile(e.target.files?.[0] || null)} />
+              <Button variant="outline" onClick={() => bulkRef.current?.click()} className="border-red-500/40 text-white hover:bg-red-500/10 w-full">
+                <Icon name="FileSpreadsheet" size={16} className="mr-2" />
+                {bulkFile ? bulkFile.name : "Выбрать файл"}
+              </Button>
+            </div>
+            <Button onClick={handleParseBulk} disabled={loadingBulk || !bulkFile} className="bg-red-500 hover:bg-red-600 text-white h-10 px-6">
+              {loadingBulk ? <Icon name="LoaderCircle" size={16} className="mr-2 animate-spin" /> : <Icon name="Upload" size={16} className="mr-2" />}
+              Загрузить план
+            </Button>
+          </div>
+        </div>
+
         <div className="grid md:grid-cols-2 gap-6">
           {/* График */}
           <div className="bg-card border border-red-500/20 rounded-lg p-6 hover:border-red-500/50 transition-colors">
             <Icon name="CalendarRange" className="text-red-500 mb-4" size={32} />
-            <h3 className="font-geist text-lg font-semibold text-white mb-2">График техпроцесса</h3>
-            <p className="font-geist text-sm text-muted-foreground mb-4">4-недельный и годовой оперативный план в формате Excel</p>
+            <h3 className="font-geist text-lg font-semibold text-white mb-2">Суточный график</h3>
+            <p className="font-geist text-sm text-muted-foreground mb-4">Загрузить Excel-файл на конкретную дату (если план не загружен помесячно)</p>
             <input ref={scheduleRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => setScheduleFile(e.target.files?.[0] || null)} />
             <Button variant="outline" onClick={() => scheduleRef.current?.click()} className="border-red-500/40 text-white hover:bg-red-500/10 w-full mb-3">
               <Icon name="FileSpreadsheet" size={18} className="mr-2" />
@@ -216,7 +292,7 @@ export function DispatcherDashboard() {
             </Button>
             <Button onClick={handleParseSchedule} disabled={loading || !scheduleFile} className="bg-red-500 hover:bg-red-600 text-white w-full">
               {loading ? <Icon name="LoaderCircle" size={18} className="mr-2 animate-spin" /> : <Icon name="Wand2" size={18} className="mr-2" />}
-              Загрузить и сформировать задание
+              Загрузить на выбранную дату
             </Button>
           </div>
 
