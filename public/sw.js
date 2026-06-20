@@ -3,16 +3,21 @@ const CACHE = "esp-dispatcher-v4"
 const APP_SHELL = ["/", "/index.html", "/manifest.webmanifest"]
 
 self.addEventListener("install", (event) => {
-  self.skipWaiting()
   event.waitUntil(
     caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL).catch(() => {}))
   )
 })
 
-// Фоновая предзагрузка всех ассетов приложения (по списку от страницы).
-// Гарантирует, что офлайн заработает с первого онлайн-захода на любом устройстве.
+// Сообщения от страницы.
 self.addEventListener("message", (event) => {
   const data = event.data
+  // Команда применить обновление сразу (по нажатию плашки «Обновить»)
+  if (data && data.type === "SKIP_WAITING") {
+    self.skipWaiting()
+    return
+  }
+  // Фоновая предзагрузка всех ассетов приложения (по списку от страницы).
+  // Гарантирует, что офлайн заработает с первого онлайн-захода на любом устройстве.
   if (!data || data.type !== "PRECACHE" || !Array.isArray(data.urls)) return
   event.waitUntil(
     caches.open(CACHE).then((cache) =>
