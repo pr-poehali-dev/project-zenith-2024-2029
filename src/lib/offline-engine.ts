@@ -548,8 +548,12 @@ export function exportShiftReport(
 
 /** Выгружает суточное задание (таблицу работ на день) в Excel */
 export function exportDailyTasks(date: string, tasks: Task[]): void {
+  console.log("[exportDailyTasks] версия v2, дата:", date, "строк заданий:", tasks?.length)
   const wb = XLSX.utils.book_new()
-  const [y, m, d] = date.split("-")
+  const parts = (date || "").split("-")
+  const y = parts[0] || "0000"
+  const m = parts[1] || "00"
+  const d = parts[2] || "00"
 
   const headers = [
     "Участок", "Устройство", "Расположение", "№ тех.карты", "Перечень работ",
@@ -570,7 +574,7 @@ export function exportDailyTasks(date: string, tasks: Task[]): void {
       t.insulation_check && "Проверка изоляции",
     ].filter(Boolean).join(", ")
 
-    const doneLabel = t.done === "+" ? "Выполнено" : t.done === "−" ? "Не выполнено" : "—"
+    const doneLabel = t.done === "+" ? "Выполнено" : (t.done === "−" || t.done === "-") ? "Не выполнено" : "—"
     const transfer = t.transfer_date ? `Перенос на ${t.transfer_date}${t.transfer_reason ? ` (${t.transfer_reason})` : ""}` : "—"
 
     aoa.push([
@@ -582,6 +586,7 @@ export function exportDailyTasks(date: string, tasks: Task[]): void {
     ])
   }
 
+  console.log("[exportDailyTasks] строк в файле (с заголовком):", aoa.length)
   const ws = XLSX.utils.aoa_to_sheet(aoa)
   ws["!cols"] = [
     { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 12 }, { wch: 40 },
