@@ -348,11 +348,29 @@ export function buildReport(records: StatRecord[], tasks: Task[]): ReportItem[] 
   return report
 }
 
+// Надёжное сохранение книги в файл: генерируем бинарный буфер и скачиваем
+// через Blob. Это работает во всех браузерах и в PWA/standalone-режиме,
+// в отличие от XLSX.writeFile, который иногда отдаёт пустой/несохранённый файл.
+function saveWorkbook(wb: XLSX.WorkBook, fileName: string): void {
+  const out = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer
+  const blob = new Blob([out], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1500)
+}
+
 function aoaToFile(aoa: (string | number)[][], sheetName: string): void {
   const wb = XLSX.utils.book_new()
   const ws = XLSX.utils.aoa_to_sheet(aoa)
   XLSX.utils.book_append_sheet(wb, ws, sheetName)
-  XLSX.writeFile(wb, `${sheetName}.xlsx`)
+  saveWorkbook(wb, `${sheetName}.xlsx`)
 }
 
 function ddmmyyyy(d: Date): string {
@@ -525,7 +543,7 @@ export function exportShiftReport(
   ]
   XLSX.utils.book_append_sheet(wb, wsTrips, "Внеплановые выезды")
 
-  XLSX.writeFile(wb, `smennyy_otchet_${y}_${m}_${d}.xlsx`)
+  saveWorkbook(wb, `smennyy_otchet_${y}_${m}_${d}.xlsx`)
 }
 
 /** Выгружает суточное задание (таблицу работ на день) в Excel */
@@ -573,7 +591,7 @@ export function exportDailyTasks(date: string, tasks: Task[]): void {
   ]
   XLSX.utils.book_append_sheet(wb, ws, "Суточное задание")
 
-  XLSX.writeFile(wb, `sutochnoe_zadanie_${y}_${m}_${d}.xlsx`)
+  saveWorkbook(wb, `sutochnoe_zadanie_${y}_${m}_${d}.xlsx`)
 }
 
 const MONTH_NAMES = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"]
@@ -666,7 +684,7 @@ export function exportMonthlyReport(
   wsDev["!cols"] = [{ wch: 16 }, { wch: 9 }, { wch: 14 }, { wch: 11 }, { wch: 16 }, { wch: 13 }, { wch: 24 }]
   XLSX.utils.book_append_sheet(wb, wsDev, "По устройствам")
 
-  XLSX.writeFile(wb, `mesyachnaya_svodka_${year}_${String(month).padStart(2, "0")}.xlsx`)
+  saveWorkbook(wb, `mesyachnaya_svodka_${year}_${String(month).padStart(2, "0")}.xlsx`)
 }
 
 export type MonthDeviceRow = {
@@ -732,7 +750,7 @@ export function exportMonthlySummary(
   ]
   XLSX.utils.book_append_sheet(wb, wsDev, "По устройствам")
 
-  XLSX.writeFile(wb, `mesyachnyy_otchet_${year}_${String(month).padStart(2, "0")}.xlsx`)
+  saveWorkbook(wb, `mesyachnyy_otchet_${year}_${String(month).padStart(2, "0")}.xlsx`)
 }
 
 export type MonthAggRow = MonthDeviceRow & { work_dates: string[]; all_deviations: string[] }
