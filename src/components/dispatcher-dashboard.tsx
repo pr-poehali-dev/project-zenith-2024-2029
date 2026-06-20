@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import Icon from "@/components/ui/icon"
 import { InstallButton } from "@/components/install-button"
-import { DownloadApps } from "@/components/download-apps"
 import * as api from "@/lib/api"
 import type { Task, Trip, ReportItem } from "@/lib/api"
 import { downloadSamplePlanLocal, downloadSampleStatisticsLocal, exportShiftReport, exportDailyTasks } from "@/lib/offline-engine"
@@ -795,9 +794,6 @@ export function DispatcherDashboard() {
           </div>
         </div>
       </section>
-
-      {/* Скачать приложение */}
-      <DownloadApps />
 
       {/* Модальное окно переноса работы */}
       {transferTaskId !== null && (
