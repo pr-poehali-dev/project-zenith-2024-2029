@@ -6,6 +6,15 @@ import './index.css'
 createRoot(document.getElementById("root")!).render(<App />);
 
 if ("serviceWorker" in navigator) {
+  // Когда новый Service Worker берёт управление — один раз перезагружаем страницу,
+  // чтобы офлайн-логика обновилась без ручного сброса кэша.
+  let refreshing = false
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshing) return
+    refreshing = true
+    window.location.reload()
+  })
+
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").then((reg) => {
       // Передаём воркеру список ассетов текущей сборки для фоновой предзагрузки,

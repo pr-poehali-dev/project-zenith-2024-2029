@@ -1,6 +1,6 @@
-// Service Worker для офлайн-режима диспетчера ЭСП
-const CACHE = "esp-dispatcher-v2"
-const APP_SHELL = ["/", "/index.html"]
+// Service Worker для полностью автономной (офлайн) работы диспетчера ЭСП
+const CACHE = "esp-dispatcher-v3"
+const APP_SHELL = ["/", "/index.html", "/manifest.webmanifest"]
 
 self.addEventListener("install", (event) => {
   self.skipWaiting()
@@ -20,7 +20,7 @@ self.addEventListener("message", (event) => {
         data.urls.map((u) =>
           cache.match(u).then((hit) =>
             hit ? undefined : fetch(u, { cache: "no-cache" })
-              .then((res) => (res && res.ok ? cache.put(u, res.clone()) : undefined))
+              .then((res) => (res && (res.ok || res.type === "opaque") ? cache.put(u, res.clone()) : undefined))
               .catch(() => {})
           )
         )
@@ -42,24 +42,51 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return
 
   const url = new URL(req.url)
-  // Запросы к бэкенд-функциям не кэшируем (онлайн/офлайн решает приложение)
+
+  // Бэкенд-функции не кэшируем (приложение работает автономно, к ним не обращается)
   if (url.hostname.includes("functions.poehali.dev")) return
 
-  // Навигация (открытие страницы) — network-first, при офлайне отдаём кэш
+  // Навигация (открытие страницы) — CACHE-FIRST: мгновенно отдаём сохранённую
+  // страницу, чтобы приложение открывалось без интернета. В фоне обновляем кэш.
   if (req.mode === "navigate") {
     event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone()
-          caches.open(CACHE).then((c) => c.put("/index.html", copy))
-          return res
-        })
-        .catch(() => caches.match("/index.html").then((r) => r || caches.match("/")))
+      caches.match("/index.html").then((cached) => {
+        const network = fetch(req)
+          .then((res) => {
+            if (res && res.ok) {
+              const copy = res.clone()
+              caches.open(CACHE).then((c) => c.put("/index.html", copy))
+            }
+            return res
+          })
+          .catch(() => cached)
+        return cached || network
+      })
     )
     return
   }
 
-  // Статика (JS/CSS/шрифты/картинки) — cache-first, докачиваем в фоне
+  // Сторонние CDN-скрипты (телеметрия, инспектор и т.п.) — не должны мешать
+  // офлайн-загрузке: пробуем сеть, при ошибке отдаём пустой успешный ответ.
+  if (url.origin !== self.location.origin) {
+    event.respondWith(
+      caches.match(req).then((cached) =>
+        cached ||
+        fetch(req)
+          .then((res) => {
+            if (res && (res.ok || res.type === "opaque")) {
+              const copy = res.clone()
+              caches.open(CACHE).then((c) => c.put(req, copy))
+            }
+            return res
+          })
+          .catch(() => new Response("", { status: 200, headers: { "Content-Type": "application/javascript" } }))
+      )
+    )
+    return
+  }
+
+  // Своя статика (JS/CSS/шрифты/картинки) — cache-first, докачиваем в фоне
   event.respondWith(
     caches.match(req).then((cached) => {
       const network = fetch(req)
