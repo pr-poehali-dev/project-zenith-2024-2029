@@ -686,3 +686,45 @@ export function exportMonthlySummary(
 
   XLSX.writeFile(wb, `mesyachnyy_otchet_${year}_${String(month).padStart(2, "0")}.xlsx`)
 }
+
+export type MonthAggRow = MonthDeviceRow & { work_dates: string[]; all_deviations: string[] }
+
+/** Агрегирует месячную сводку по устройствам из локальных суточных отчётов */
+export function aggregateMonth(
+  reports: (ReportItem & { report_date: string })[],
+): { rows: MonthAggRow[]; total_days: number; total_deviations: number } {
+  const byDevice = new Map<string, (ReportItem & { report_date: string })[]>()
+  for (const r of reports) {
+    const arr = byDevice.get(r.device)
+    if (arr) arr.push(r)
+    else byDevice.set(r.device, [r])
+  }
+
+  const rows: MonthAggRow[] = []
+  for (const [device, items] of byDevice.entries()) {
+    const workDates = Array.from(new Set(items.map((i) => i.report_date))).sort()
+    const matches = items.filter((i) => i.matches_plan).length
+    const deviations = items.length - matches
+    const total = items.length || 1
+    rows.push({
+      device,
+      days_worked: workDates.length,
+      total_records: items.length,
+      matches_plan_count: matches,
+      deviations_count: deviations,
+      staff_present_days: items.filter((i) => i.staff_present).length,
+      calibrations_done: items.filter((i) => i.calibration_done).length,
+      shutdowns_count: items.filter((i) => i.shutdown_fact).length,
+      plan_percent: Math.round((matches / total) * 100),
+      work_dates: workDates,
+      all_deviations: items.map((i) => i.deviation_notes).filter((n) => n && n.trim() !== ""),
+    })
+  }
+  rows.sort((a, b) => b.deviations_count - a.deviations_count || a.device.localeCompare(b.device))
+
+  return {
+    rows,
+    total_days: new Set(reports.map((r) => r.report_date)).size,
+    total_deviations: rows.reduce((s, r) => s + r.deviations_count, 0),
+  }
+}

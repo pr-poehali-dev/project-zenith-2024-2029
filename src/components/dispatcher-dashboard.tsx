@@ -36,23 +36,11 @@ export function DispatcherDashboard() {
   const [loadingMonthly, setLoadingMonthly] = useState(false)
   const [statusMsg, setStatusMsg] = useState("")
   const [statusErr, setStatusErr] = useState("")
-  const [online, setOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true)
   const [offlineReady, setOfflineReady] = useState(false)
   const [shared, setShared] = useState(false)
   const scheduleRef = useRef<HTMLInputElement>(null)
   const statsRef = useRef<HTMLInputElement>(null)
   const bulkRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    const on = () => setOnline(true)
-    const off = () => setOnline(false)
-    window.addEventListener("online", on)
-    window.addEventListener("offline", off)
-    return () => {
-      window.removeEventListener("online", on)
-      window.removeEventListener("offline", off)
-    }
-  }, [])
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return
@@ -266,15 +254,11 @@ export function DispatcherDashboard() {
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="font-orbitron text-3xl md:text-4xl font-bold text-white">Рабочее место диспетчера ЭСП</h1>
                 <span
-                  className={`flex items-center gap-1.5 font-geist text-xs px-2.5 py-1 rounded-full border ${
-                    online
-                      ? "bg-green-500/15 text-green-400 border-green-500/30"
-                      : "bg-yellow-500/15 text-yellow-400 border-yellow-500/30"
-                  }`}
-                  title={online ? "Есть подключение к серверу" : "Нет интернета — работа в офлайн-режиме, данные сохраняются локально"}
+                  className="flex items-center gap-1.5 font-geist text-xs px-2.5 py-1 rounded-full border bg-green-500/15 text-green-400 border-green-500/30"
+                  title="Приложение работает автономно: все данные хранятся и обрабатываются на устройстве, интернет не требуется"
                 >
-                  <Icon name={online ? "Wifi" : "WifiOff"} size={14} />
-                  {online ? "Онлайн" : "Офлайн"}
+                  <Icon name="HardDriveDownload" size={14} />
+                  Автономно
                 </span>
                 <Button
                   variant="outline"
@@ -340,22 +324,12 @@ export function DispatcherDashboard() {
         </div>
       </section>
 
-      {/* Баннер офлайн-режима */}
-      {!online && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3 font-geist text-yellow-400 flex items-center gap-2">
-            <Icon name="WifiOff" size={16} />
-            Нет интернета. Приложение работает офлайн: загрузка Excel, задания, отчёты и сводка считаются на устройстве. Все изменения сохраняются локально и отправятся на сервер при появлении сети.
-          </div>
-        </div>
-      )}
-
       {/* Уведомление: приложение готово к офлайн-работе */}
-      {offlineReady && online && (
+      {offlineReady && (
         <div className="fixed bottom-5 right-5 z-[9999] max-w-sm animate-in fade-in slide-in-from-bottom-4">
           <div className="bg-card border border-green-500/40 rounded-lg px-4 py-3 font-geist text-sm text-green-400 flex items-start gap-2 shadow-lg shadow-black/40">
             <Icon name="DownloadCloud" size={18} className="mt-0.5 shrink-0" />
-            <span>Приложение сохранено на устройстве. Теперь оно открывается и работает даже без интернета — можно поделиться ссылкой с коллегами.</span>
+            <span>Приложение сохранено на устройстве. Теперь оно полностью автономно — открывается и работает без интернета, данные хранятся локально.</span>
           </div>
         </div>
       )}

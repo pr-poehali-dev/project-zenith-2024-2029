@@ -4,9 +4,8 @@ import { Badge } from "@/components/ui/badge"
 import Icon from "@/components/ui/icon"
 import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
-import { exportMonthlySummary } from "@/lib/offline-engine"
-
-const API_URL = "https://functions.poehali.dev/4bbcba9d-df17-4bd3-ac44-cd6918c0c0ea"
+import { exportMonthlySummary, aggregateMonth } from "@/lib/offline-engine"
+import { dbGetMonthReports } from "@/lib/offline-db"
 
 const MONTHS = [
   "Январь","Февраль","Март","Апрель","Май","Июнь",
@@ -44,9 +43,8 @@ export default function MonthlyReport() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}?action=monthly-report&year=${year}&month=${month}`)
-      const json = await res.json()
-      setData(json)
+      const reports = await dbGetMonthReports(year, month)
+      setData(aggregateMonth(reports))
     } finally {
       setLoading(false)
     }
