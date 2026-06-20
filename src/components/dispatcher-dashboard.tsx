@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import Icon from "@/components/ui/icon"
+import { InstallButton } from "@/components/install-button"
 import * as api from "@/lib/api"
 import type { Task, Trip, ReportItem } from "@/lib/api"
 import { downloadSamplePlanLocal, downloadSampleStatisticsLocal, exportShiftReport } from "@/lib/offline-engine"
@@ -284,6 +285,7 @@ export function DispatcherDashboard() {
                   <Icon name={shared ? "Check" : "Share2"} size={14} className="mr-1.5" />
                   {shared ? "Скопировано" : "Поделиться"}
                 </Button>
+                <InstallButton />
               </div>
               <p className="font-geist text-muted-foreground mt-1">Анализ статистики и автоматическое формирование отчётных форм за смену</p>
             </div>
