@@ -1,5 +1,5 @@
 // Service Worker для полностью автономной (офлайн) работы диспетчера ЭСП
-const CACHE = "esp-dispatcher-v3"
+const CACHE = "esp-dispatcher-v4"
 const APP_SHELL = ["/", "/index.html", "/manifest.webmanifest"]
 
 self.addEventListener("install", (event) => {
@@ -86,19 +86,18 @@ self.addEventListener("fetch", (event) => {
     return
   }
 
-  // Своя статика (JS/CSS/шрифты/картинки) — cache-first, докачиваем в фоне
+  // Своя статика (JS/CSS/шрифты/картинки) — NETWORK-FIRST: при наличии сети
+  // всегда берём свежую версию (чтобы обновления кода доходили сразу),
+  // а кэш используем как запас для офлайна.
   event.respondWith(
-    caches.match(req).then((cached) => {
-      const network = fetch(req)
-        .then((res) => {
-          if (res && res.status === 200 && res.type !== "opaque") {
-            const copy = res.clone()
-            caches.open(CACHE).then((c) => c.put(req, copy))
-          }
-          return res
-        })
-        .catch(() => cached)
-      return cached || network
-    })
+    fetch(req)
+      .then((res) => {
+        if (res && res.status === 200 && res.type !== "opaque") {
+          const copy = res.clone()
+          caches.open(CACHE).then((c) => c.put(req, copy))
+        }
+        return res
+      })
+      .catch(() => caches.match(req))
   )
 })
