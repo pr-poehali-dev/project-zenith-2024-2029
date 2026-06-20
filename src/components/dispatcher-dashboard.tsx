@@ -7,7 +7,7 @@ import { InstallButton } from "@/components/install-button"
 import { DownloadApps } from "@/components/download-apps"
 import * as api from "@/lib/api"
 import type { Task, Trip, ReportItem } from "@/lib/api"
-import { downloadSamplePlanLocal, downloadSampleStatisticsLocal, exportShiftReport } from "@/lib/offline-engine"
+import { downloadSamplePlanLocal, downloadSampleStatisticsLocal, exportShiftReport, exportDailyTasks } from "@/lib/offline-engine"
 
 function todayStr() {
   return new Date().toISOString().split("T")[0]
@@ -137,6 +137,12 @@ export function DispatcherDashboard() {
     if (report.length === 0) { setStatusErr("Нет данных отчёта для выгрузки"); return }
     exportShiftReport(selectedDate, report, trips)
     setStatusMsg("Сменный отчёт выгружен в Excel")
+  }
+
+  const handleExportTasks = () => {
+    if (tasks.length === 0) { setStatusErr("Нет суточного задания для выгрузки"); return }
+    exportDailyTasks(selectedDate, tasks)
+    setStatusMsg("Суточное задание выгружено в Excel")
   }
 
   const handleExportMonthly = async () => {
@@ -449,14 +455,21 @@ export function DispatcherDashboard() {
 
       {/* Суточное задание */}
       <section id="tasks" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-red-500/20">
-        <h2 className="font-orbitron text-2xl font-bold text-white mb-6 flex items-center gap-3">
-          <Icon name="ClipboardList" className="text-red-500" size={24} /> Шаг 2. Суточное задание
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <h2 className="font-orbitron text-2xl font-bold text-white flex items-center gap-3">
+            <Icon name="ClipboardList" className="text-red-500" size={24} /> Шаг 2. Суточное задание
+            {tasks.length > 0 && (
+              <span className="font-geist text-sm font-normal text-muted-foreground">
+                ({tasks.length} {tasks.length % 10 === 1 && tasks.length % 100 !== 11 ? "задание" : "заданий"})
+              </span>
+            )}
+          </h2>
           {tasks.length > 0 && (
-            <span className="font-geist text-sm font-normal text-muted-foreground">
-              ({tasks.length} {tasks.length % 10 === 1 && tasks.length % 100 !== 11 ? "задание" : "заданий"})
-            </span>
+            <Button onClick={handleExportTasks} className="bg-red-500 hover:bg-red-600 text-white">
+              <Icon name="Download" size={18} className="mr-2" /> Выгрузить задание в Excel
+            </Button>
           )}
-        </h2>
+        </div>
         {tasks.length === 0 ? (
           <div className="font-geist text-muted-foreground bg-card border border-red-500/20 rounded-lg p-6 text-center">
             <Icon name="Info" size={24} className="inline mb-2 text-red-500" />

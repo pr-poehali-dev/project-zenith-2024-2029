@@ -528,6 +528,54 @@ export function exportShiftReport(
   XLSX.writeFile(wb, `smennyy_otchet_${y}_${m}_${d}.xlsx`)
 }
 
+/** Выгружает суточное задание (таблицу работ на день) в Excel */
+export function exportDailyTasks(date: string, tasks: Task[]): void {
+  const wb = XLSX.utils.book_new()
+  const [y, m, d] = date.split("-")
+
+  const headers = [
+    "Участок", "Устройство", "Расположение", "№ тех.карты", "Перечень работ",
+    "Плановая продолжительность", "Признаки", "ФИО исполнителя", "Приказ на выкл.",
+    "Выполнено", "Собственник авто", "ГСМ, л", "Вид транспорта",
+    "Прибытие", "Убытие", "Время выкл.", "Время вкл.", "Итого откл. (ч)", "Перенос",
+  ]
+  const aoa: (string | number)[][] = [headers]
+
+  for (const t of tasks) {
+    const signs = [
+      t.responsible && "Ответственный",
+      t.shutdown && "Выключение",
+      t.two_persons && "Вдвоём",
+      t.voice_check && "Голос. проверка",
+      t.calibration && "Калибровка",
+      t.orientation && "Ориентирование",
+      t.insulation_check && "Проверка изоляции",
+    ].filter(Boolean).join(", ")
+
+    const doneLabel = t.done === "+" ? "Выполнено" : t.done === "−" ? "Не выполнено" : "—"
+    const transfer = t.transfer_date ? `Перенос на ${t.transfer_date}${t.transfer_reason ? ` (${t.transfer_reason})` : ""}` : "—"
+
+    aoa.push([
+      t.section || "—", t.device || "—", t.location || "—", t.tech_card || "—", t.work || "—",
+      t.planned_duration || "—", signs || "—", t.executor || "—", t.order_number || "—",
+      doneLabel, t.car_owner || "—", t.fuel_spent || "—", t.transport_type || "—",
+      t.arrival_time || "—", t.departure_time || "—", t.power_off_time || "—",
+      t.power_on_time || "—", t.total_off_hours || "—", transfer,
+    ])
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  ws["!cols"] = [
+    { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 12 }, { wch: 40 },
+    { wch: 22 }, { wch: 40 }, { wch: 22 }, { wch: 14 },
+    { wch: 14 }, { wch: 20 }, { wch: 8 }, { wch: 16 },
+    { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 30 },
+  ]
+  XLSX.utils.book_append_sheet(wb, ws, "Суточное задание")
+
+  XLSX.writeFile(wb, `sutochnoe_zadanie_${y}_${m}_${d}.xlsx`)
+}
+
 const MONTH_NAMES = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"]
 
 /** Формирует и скачивает месячную сводку в Excel: итоги + по дням + по устройствам */
