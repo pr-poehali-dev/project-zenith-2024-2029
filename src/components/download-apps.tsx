@@ -73,6 +73,21 @@ export function DownloadApps() {
           </p>
         </div>
       </div>
+
+      {/* Подсказка: как собрать установщики */}
+      <details className="mt-6 bg-card border border-red-500/20 rounded-lg p-5">
+        <summary className="font-geist text-white font-medium cursor-pointer flex items-center gap-2">
+          <Icon name="Wrench" className="text-red-500" size={18} />
+          Как получить файлы .exe и .apk (для администратора)
+        </summary>
+        <ol className="mt-4 space-y-2 font-geist text-sm text-muted-foreground list-decimal list-inside">
+          <li>В редакторе нажмите <span className="text-white">«Скачать → Подключить GitHub»</span> и выгрузите проект.</li>
+          <li>На GitHub откройте вкладку <span className="text-white">Actions</span> → сценарий <span className="text-white">«Сборка установщика Windows (.exe)»</span> → <span className="text-white">Run workflow</span>.</li>
+          <li>После сборки в разделе <span className="text-white">Artifacts</span> скачайте готовый установщик <span className="text-white">.exe</span>.</li>
+          <li>Для <span className="text-white">.apk</span> следуйте разделу «Android» в файле <span className="text-white">BUILD_INSTALLERS.md</span> внутри проекта.</li>
+          <li>Готовые ссылки на файлы пришлите разработчику — кнопки выше начнут скачивать установщики напрямую.</li>
+        </ol>
+      </details>
     </section>
   )
 }
