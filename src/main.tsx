@@ -42,18 +42,26 @@ if ("serviceWorker" in navigator) {
       // Передаём воркеру список ассетов текущей сборки для фоновой предзагрузки,
       // чтобы офлайн гарантированно работал с первого захода на любом устройстве.
       const collectAssets = () => {
-        const urls = new Set<string>(["/", "/index.html"])
-        document.querySelectorAll("script[src], link[href]").forEach((el) => {
+        const urls = new Set<string>(["/", "/index.html", "/manifest.webmanifest", "/icon.svg"])
+        // Свои скрипты, стили, иконки.
+        document.querySelectorAll("script[src], link[href], img[src]").forEach((el) => {
           const src = el.getAttribute("src") || el.getAttribute("href")
-          if (src && (src.startsWith("/") || src.startsWith(location.origin))) {
-            urls.add(src)
-          }
+          if (!src) return
+          if (src.startsWith("/") || src.startsWith(location.origin)) urls.add(src)
+        })
+        // Внешние шрифты (Google Fonts) — чтобы текст выглядел одинаково офлайн.
+        document.querySelectorAll('link[rel="stylesheet"]').forEach((el) => {
+          const href = el.getAttribute("href")
+          if (href && (href.includes("fonts.googleapis") || href.includes("fonts.gstatic"))) urls.add(href)
         })
         const target = reg.active || navigator.serviceWorker.controller
         if (target) target.postMessage({ type: "PRECACHE", urls: Array.from(urls) })
       }
       if (reg.active) collectAssets()
       navigator.serviceWorker.ready.then(collectAssets)
+      // Повторяем после полной загрузки и через паузу — чтобы поймать
+      // подгруженные шрифты и динамические чанки.
+      window.addEventListener("load", () => setTimeout(collectAssets, 2500))
     }).catch(() => {})
   })
 }
