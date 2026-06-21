@@ -26,7 +26,7 @@ export function DispatcherDashboard() {
   const [transferReason, setTransferReason] = useState("")
   const [scheduleFile, setScheduleFile] = useState<File | null>(null)
   const [statsFile, setStatsFile] = useState<File | null>(null)
-  const [bulkFile, setBulkFile] = useState<File | null>(null)
+  const [bulkFiles, setBulkFiles] = useState<File[]>([])
   const [bulkYear, setBulkYear] = useState(now.getFullYear())
   const [bulkMonth, setBulkMonth] = useState(now.getMonth() + 1)
   const [loading, setLoading] = useState(false)
@@ -109,19 +109,31 @@ export function DispatcherDashboard() {
   }
 
   const handleParseBulk = async () => {
-    if (!bulkFile) { setStatusErr("Выберите файл оперативного плана"); return }
+    if (bulkFiles.length === 0) { setStatusErr("Выберите файлы оперативного плана"); return }
     setLoadingBulk(true)
     setStatusMsg("")
     setStatusErr("")
-    try {
-      const { days, total } = await api.uploadScheduleBulk(bulkFile, bulkYear, bulkMonth)
-      setStatusMsg(`Оперативный план загружен: ${total} работ за ${days} дней (${MONTHS[bulkMonth - 1]} ${bulkYear})`)
-      await loadTasks()
-    } catch {
-      setStatusErr("Ошибка при загрузке файла")
-    } finally {
-      setLoadingBulk(false)
+    let total = 0
+    const allDays = new Set<string>()
+    const failed: string[] = []
+    for (const file of bulkFiles) {
+      try {
+        const res = await api.uploadScheduleBulk(file, bulkYear, bulkMonth, allDays)
+        total += res.total
+      } catch {
+        failed.push(file.name)
+      }
     }
+    await loadTasks()
+    if (failed.length) {
+      setStatusErr(`Не удалось загрузить: ${failed.join(", ")}`)
+    }
+    if (total > 0) {
+      setStatusMsg(`Загружено планов: ${bulkFiles.length - failed.length} • ${total} работ за ${allDays.size} дней (${MONTHS[bulkMonth - 1]} ${bulkYear})`)
+    } else if (!failed.length) {
+      setStatusErr("В выбранных файлах не найдено работ за указанный месяц")
+    }
+    setLoadingBulk(false)
   }
 
   const downloadSamplePlan = () => {
@@ -397,18 +409,35 @@ export function DispatcherDashboard() {
               </select>
             </div>
             <div className="flex-1 min-w-[200px]">
-              <label className="font-geist text-xs text-muted-foreground mb-1 block">Файл плана (.xlsx)</label>
-              <input ref={bulkRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => setBulkFile(e.target.files?.[0] || null)} />
+              <label className="font-geist text-xs text-muted-foreground mb-1 block">Файлы плана (.xlsx) — можно несколько</label>
+              <input ref={bulkRef} type="file" accept=".xlsx,.xls" multiple className="hidden" onChange={(e) => setBulkFiles(Array.from(e.target.files || []))} />
               <Button variant="outline" onClick={() => bulkRef.current?.click()} className="border-red-500/40 text-white hover:bg-red-500/10 w-full">
                 <Icon name="FileSpreadsheet" size={16} className="mr-2" />
-                {bulkFile ? bulkFile.name : "Выбрать файл"}
+                {bulkFiles.length === 0 ? "Выбрать файлы" : bulkFiles.length === 1 ? bulkFiles[0].name : `Выбрано файлов: ${bulkFiles.length}`}
               </Button>
             </div>
-            <Button onClick={handleParseBulk} disabled={loadingBulk || !bulkFile} className="bg-red-500 hover:bg-red-600 text-white h-10 px-6">
+            <Button onClick={handleParseBulk} disabled={loadingBulk || bulkFiles.length === 0} className="bg-red-500 hover:bg-red-600 text-white h-10 px-6">
               {loadingBulk ? <Icon name="LoaderCircle" size={16} className="mr-2 animate-spin" /> : <Icon name="Upload" size={16} className="mr-2" />}
-              Загрузить план
+              Загрузить {bulkFiles.length > 1 ? `планы (${bulkFiles.length})` : "план"}
             </Button>
           </div>
+          {bulkFiles.length > 1 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {bulkFiles.map((f, i) => (
+                <span key={i} className="inline-flex items-center gap-1.5 bg-background border border-red-500/20 rounded-md px-2.5 py-1 font-geist text-xs text-muted-foreground">
+                  <Icon name="FileSpreadsheet" size={12} className="text-red-500" />
+                  {f.name}
+                  <button
+                    onClick={() => setBulkFiles((prev) => prev.filter((_, j) => j !== i))}
+                    className="ml-1 text-muted-foreground hover:text-red-400"
+                    title="Убрать файл"
+                  >
+                    <Icon name="X" size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="mt-4 pt-4 border-t border-red-500/10 flex items-center justify-between flex-wrap gap-2">
             <p className="font-geist text-xs text-muted-foreground">
               <Icon name="Info" size={14} className="inline mr-1 text-red-500" />

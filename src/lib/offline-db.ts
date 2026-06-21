@@ -66,6 +66,16 @@ export async function dbSaveTasks(date: string, tasks: Task[]) {
   await tx.done
 }
 
+// Добавляет задания к дню, НЕ удаляя уже сохранённые (для загрузки нескольких планов).
+export async function dbAppendTasks(date: string, tasks: Task[]) {
+  const db = await getDB()
+  const tx = db.transaction("tasks", "readwrite")
+  for (const t of tasks) {
+    await tx.store.put({ ...t, task_date: date })
+  }
+  await tx.done
+}
+
 export async function dbGetTasks(date: string): Promise<Task[]> {
   const db = await getDB()
   const list = await db.getAllFromIndex("tasks", "by_date", date)

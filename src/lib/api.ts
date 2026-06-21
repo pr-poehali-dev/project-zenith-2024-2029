@@ -4,7 +4,7 @@ import {
   type Task, type ReportItem,
 } from "./offline-engine"
 import {
-  dbSaveTasks, dbGetTasks, dbUpdateTask, dbTransferTask,
+  dbSaveTasks, dbAppendTasks, dbGetTasks, dbUpdateTask, dbTransferTask,
   dbSaveReport, dbGetReport, dbGetMonthReports,
   dbGetTrips, dbAddTrip, dbUpdateTrip, dbDeleteTrip,
   type Trip,
@@ -38,12 +38,24 @@ export async function uploadSchedule(file: File, date: string): Promise<Task[]> 
   return tasks
 }
 
-export async function uploadScheduleBulk(file: File, year: number, month: number): Promise<{ days: number; total: number }> {
+// seenDays — общий набор дней для серии загрузок: первый файл, затронувший день,
+// заменяет старые данные за этот день (очистка), последующие файлы — дополняют.
+export async function uploadScheduleBulk(
+  file: File,
+  year: number,
+  month: number,
+  seenDays?: Set<string>,
+): Promise<{ days: number; total: number }> {
   const bytes = await file.arrayBuffer()
   const byDate = parseScheduleBulk(bytes, year, month)
   let total = 0
   for (const [d, tasks] of Object.entries(byDate)) {
-    await dbSaveTasks(d, tasks)
+    if (seenDays && seenDays.has(d)) {
+      await dbAppendTasks(d, tasks)
+    } else {
+      await dbSaveTasks(d, tasks)
+      seenDays?.add(d)
+    }
     total += tasks.length
   }
   return { days: Object.keys(byDate).length, total }
