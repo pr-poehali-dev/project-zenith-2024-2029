@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import Icon from "@/components/ui/icon"
+import { OfflineReadyBadge } from "@/components/offline-ready-badge"
 import * as api from "@/lib/api"
 import type { Task, Trip, ReportItem } from "@/lib/api"
 import { downloadSamplePlanLocal, downloadSampleStatisticsLocal, exportShiftReport, exportDailyTasks, exportUnplannedTrips } from "@/lib/offline-engine"
@@ -270,6 +271,7 @@ export function DispatcherDashboard() {
                   <Icon name="HardDriveDownload" size={14} />
                   Автономно
                 </span>
+                <OfflineReadyBadge />
                 <Button
                   variant="outline"
                   size="sm"
