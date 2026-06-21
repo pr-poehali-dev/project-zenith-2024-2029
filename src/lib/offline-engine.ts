@@ -599,6 +599,37 @@ export function exportDailyTasks(date: string, tasks: Task[]): void {
   saveWorkbook(wb, `sutochnoe_zadanie_${y}_${m}_${d}.xlsx`)
 }
 
+/** Выгружает таблицу внеплановых выездов за день в Excel */
+export function exportUnplannedTrips(date: string, trips: ExportTrip[]): void {
+  const wb = XLSX.utils.book_new()
+  const parts = (date || "").split("-")
+  const y = parts[0] || "0000"
+  const m = parts[1] || "00"
+  const d = parts[2] || "00"
+
+  const headers = [
+    "Устройство", "Расположение", "ФИО исполнителя", "Время откл.",
+    "Время вкл.", "Итого откл. (ч)", "Отказ", "Предотказ", "Причина",
+  ]
+  const aoa: (string | number)[][] = [headers]
+  for (const t of trips) {
+    aoa.push([
+      t.device || "—", t.location || "—", t.executor || "—",
+      t.power_off_time || "—", t.power_on_time || "—", t.total_off_hours || "—",
+      t.is_failure || "—", t.is_pre_failure || "—", t.reason || "—",
+    ])
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  ws["!cols"] = [
+    { wch: 16 }, { wch: 18 }, { wch: 22 }, { wch: 12 },
+    { wch: 12 }, { wch: 14 }, { wch: 8 }, { wch: 10 }, { wch: 40 },
+  ]
+  XLSX.utils.book_append_sheet(wb, ws, "Внеплановые выезды")
+
+  saveWorkbook(wb, `vneplanovye_vyezdy_${y}_${m}_${d}.xlsx`)
+}
+
 const MONTH_NAMES = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"]
 
 /** Формирует и скачивает месячную сводку в Excel: итоги + по дням + по устройствам */

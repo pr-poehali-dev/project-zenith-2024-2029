@@ -3,10 +3,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import Icon from "@/components/ui/icon"
-import { InstallButton } from "@/components/install-button"
 import * as api from "@/lib/api"
 import type { Task, Trip, ReportItem } from "@/lib/api"
-import { downloadSamplePlanLocal, downloadSampleStatisticsLocal, exportShiftReport, exportDailyTasks } from "@/lib/offline-engine"
+import { downloadSamplePlanLocal, downloadSampleStatisticsLocal, exportShiftReport, exportDailyTasks, exportUnplannedTrips } from "@/lib/offline-engine"
 
 function todayStr() {
   return new Date().toISOString().split("T")[0]
@@ -144,6 +143,12 @@ export function DispatcherDashboard() {
     setStatusMsg("Суточное задание выгружено в Excel")
   }
 
+  const handleExportTrips = () => {
+    if (trips.length === 0) { setStatusErr("Нет внеплановых выездов для выгрузки"); return }
+    exportUnplannedTrips(selectedDate, trips)
+    setStatusMsg("Внеплановые выезды выгружены в Excel")
+  }
+
   const handleExportMonthly = async () => {
     setLoadingMonthly(true)
     setStatusMsg("")
@@ -275,7 +280,6 @@ export function DispatcherDashboard() {
                   <Icon name={shared ? "Check" : "Share2"} size={14} className="mr-1.5" />
                   {shared ? "Скопировано" : "Поделиться"}
                 </Button>
-                <InstallButton />
               </div>
               <p className="font-geist text-muted-foreground mt-1">Анализ статистики и автоматическое формирование отчётных форм за смену</p>
             </div>
@@ -586,9 +590,14 @@ export function DispatcherDashboard() {
           <h2 className="font-orbitron text-2xl font-bold text-white flex items-center gap-3">
             <Icon name="Siren" className="text-red-500" size={24} /> Внеплановый выезд
           </h2>
-          <Button onClick={addTrip} className="bg-red-500 hover:bg-red-600 text-white">
-            <Icon name="Plus" size={18} className="mr-2" /> Добавить выезд
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button onClick={handleExportTrips} variant="outline" className="border-red-500/30 text-white hover:bg-red-500/10">
+              <Icon name="FileSpreadsheet" size={18} className="mr-2" /> Выгрузить в Excel
+            </Button>
+            <Button onClick={addTrip} className="bg-red-500 hover:bg-red-600 text-white">
+              <Icon name="Plus" size={18} className="mr-2" /> Добавить выезд
+            </Button>
+          </div>
         </div>
         {trips.length === 0 ? (
           <div className="font-geist text-muted-foreground bg-card border border-red-500/20 rounded-lg p-6 text-center">
