@@ -1,5 +1,5 @@
 // Service Worker для полностью автономной (офлайн) работы диспетчера ЭСП
-const CACHE = "esp-dispatcher-v4"
+const CACHE = "esp-dispatcher-v5"
 const APP_SHELL = ["/", "/index.html", "/manifest.webmanifest"]
 
 self.addEventListener("install", (event) => {
