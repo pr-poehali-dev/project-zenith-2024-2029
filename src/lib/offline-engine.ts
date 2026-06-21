@@ -117,6 +117,114 @@ function findColumns(rows: Row[]): { headerRow: number; cols: Cols } {
   return { headerRow, cols }
 }
 
+// ---- Распознавание формата «Оперативный план работ» (Пост КТСМ) ----
+type OpCols = {
+  date: number
+  weekly: number
+  yearly: number
+  post: number
+  reliability: number
+  unplanned: number
+  done: number
+  executor: number
+}
+
+// Ищет заголовки оперативного плана; возвращает индекс строки заголовка и колонки,
+// либо null если это другой формат.
+function findOpPlanColumns(rows: Row[]): { headerRow: number; cols: OpCols } | null {
+  for (let i = 0; i < Math.min(20, rows.length); i++) {
+    const rl = rows[i].map((c) => (c ? String(c).toLowerCase().trim() : ""))
+    const joined = rl.join(" | ")
+    const looksLikePlan =
+      (joined.includes("числа месяца") || joined.includes("число")) &&
+      (joined.includes("пост ктсм") || joined.includes("ктсм")) &&
+      (joined.includes("план-график") || joined.includes("плану-графику") || joined.includes("недельн"))
+    if (!looksLikePlan) continue
+
+    const cols: OpCols = {
+      date: -1, weekly: -1, yearly: -1, post: -1,
+      reliability: -1, unplanned: -1, done: -1, executor: -1,
+    }
+    rl.forEach((c, j) => {
+      if (c.includes("числа месяца") || (c.includes("число") && cols.date === -1)) cols.date = j
+      if (c.includes("4-недельн") || c.includes("недельн")) cols.weekly = j
+      if (c.includes("годов")) cols.yearly = j
+      if (c.includes("ктсм") && cols.post === -1) cols.post = j
+      if (c.includes("надежност") || c.includes("надёжност")) cols.reliability = j
+      if (c.includes("внепланов") || c.includes("непредвиден")) cols.unplanned = j
+      if (c.includes("отметка") || c.includes("выполнени")) cols.done = j
+      if (c.includes("исполнител") || c.includes("ф.и.о") || c.includes("фио")) cols.executor = j
+    })
+    if (cols.post === -1) continue
+    return { headerRow: i, cols }
+  }
+  return null
+}
+
+// Извлекает день месяца из ячейки вида «1.06-пн.», «15.06-пн.», «1», «1.06»
+function dayFromOpCell(value: string): number | null {
+  const s = value.trim()
+  if (!s) return null
+  const m = s.match(/^(\d{1,2})/)
+  if (!m) return null
+  const day = Number(m[1])
+  return day >= 1 && day <= 31 ? day : null
+}
+
+// Собирает строку «Перечень работ» из кодов разных колонок плана с подписями.
+function buildOpWork(row: Row, cols: OpCols): { work: string; section: string } {
+  const parts: string[] = []
+  const weekly = cell(row, cols.weekly)
+  const yearly = cell(row, cols.yearly)
+  const reliability = cell(row, cols.reliability)
+  const unplanned = cell(row, cols.unplanned)
+  if (weekly) parts.push(`4-недельный план: ${weekly}`)
+  if (yearly) parts.push(`Годовой план: ${yearly}`)
+  if (reliability) parts.push(`Повышение надёжности: ${reliability}`)
+  if (unplanned) parts.push(`Внеплановые: ${unplanned}`)
+  const post = cell(row, cols.post)
+  const section = /пкл/i.test(post) ? "ПКЛ" : ""
+  return { work: parts.join("; "), section }
+}
+
+function buildOpTask(row: Row, cols: OpCols): Task | null {
+  const post = cell(row, cols.post)
+  const { work, section } = buildOpWork(row, cols)
+  // Строка считается рабочей, если есть Пост КТСМ или хотя бы какие-то работы.
+  if (!post && !work) return null
+  return {
+    id: nextId(),
+    device: post || "—",
+    section,
+    work: work || "—",
+    planned_duration: "—",
+    ...classifyWork(work),
+    ...emptyTask(),
+    executor: cell(row, cols.executor),
+    done: cell(row, cols.done),
+  } as Task
+}
+
+// Парсит оперативный план: строки идут по дням, день берётся из колонки «Числа
+// месяца» и «протягивается» вниз на пустые ячейки. Возвращает {date: tasks[]}.
+function parseOpPlanBulk(rows: Row[], headerRow: number, cols: OpCols, year: number, month: number): Record<string, Task[]> {
+  const byDate: Record<string, Task[]> = {}
+  let currentDay: number | null = null
+  for (let i = headerRow + 1; i < rows.length; i++) {
+    const row = rows[i]
+    if (!row || !row.some((c) => c != null && c !== "")) continue
+    const dayCell = cell(row, cols.date)
+    const day = dayFromOpCell(dayCell)
+    if (day) currentDay = day
+    if (currentDay === null) continue
+    const task = buildOpTask(row, cols)
+    if (!task) continue
+    const key = fmtDate(new Date(year, month - 1, currentDay))
+    ;(byDate[key] ||= []).push(task)
+  }
+  return byDate
+}
+
 function parseRowDate(row: Row, colDate: number | null): Date | null {
   if (colDate === null || colDate >= row.length || row[colDate] == null) return null
   const val = row[colDate]
@@ -184,6 +292,13 @@ function fmtDate(d: Date): string {
 export function parseScheduleForDate(fileBytes: ArrayBuffer, targetDate: string): Task[] {
   const rows = readRows(fileBytes)
   if (!rows.length) return []
+  // Формат «Оперативный план работ» (Пост КТСМ) — строки по дням месяца.
+  const op = findOpPlanColumns(rows)
+  if (op) {
+    const [ty, tm] = targetDate.split("-").map(Number)
+    const byDate = parseOpPlanBulk(rows, op.headerRow, op.cols, ty, tm)
+    return byDate[targetDate] || []
+  }
   const { headerRow, cols } = findColumns(rows)
   const tasks: Task[] = []
   for (let i = headerRow + 1; i < rows.length; i++) {
@@ -201,6 +316,9 @@ export function parseScheduleForDate(fileBytes: ArrayBuffer, targetDate: string)
 export function parseScheduleBulk(fileBytes: ArrayBuffer, year: number, month: number): Record<string, Task[]> {
   const rows = readRows(fileBytes)
   if (!rows.length) return {}
+  // Формат «Оперативный план работ» (Пост КТСМ) — строки по дням месяца.
+  const op = findOpPlanColumns(rows)
+  if (op) return parseOpPlanBulk(rows, op.headerRow, op.cols, year, month)
   const { headerRow, cols } = findColumns(rows)
   const daysInMonth = new Date(year, month, 0).getDate()
   const byDate: Record<string, Task[]> = {}
