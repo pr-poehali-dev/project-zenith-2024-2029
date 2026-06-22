@@ -414,12 +414,31 @@ export function parseStatistics(fileBytes: ArrayBuffer): StatRecord[] {
 // Сопоставление идёт по устройству (Task.device). Заполняются: фактическое
 // время работ → прибытие/убытие, калибровка, факт выключения. Возвращает
 // обновлённый список заданий (новые объекты, исходные не мутируются).
+// Ключи сопоставления устройства: нормализованное имя + «числовой» ключ (км/номер).
+function deviceKeys(name: string): string[] {
+  const raw = (name || "").trim().toLowerCase()
+  const keys: string[] = []
+  if (raw) keys.push(raw.replace(/\s+/g, ""))
+  // Извлекаем число (например «1813км» → «1813», «км 1813» → «1813»).
+  const num = raw.match(/\d+/)
+  if (num) keys.push(`#${num[0]}`)
+  return keys
+}
+
 export function applyStatisticsToTasks(records: StatRecord[], tasks: Task[]): Task[] {
   const byDevice = new Map<string, StatRecord>()
-  for (const r of records) byDevice.set(r.device.trim().toLowerCase(), r)
+  for (const r of records) {
+    for (const k of deviceKeys(r.device)) {
+      if (!byDevice.has(k)) byDevice.set(k, r)
+    }
+  }
 
   return tasks.map((t) => {
-    const rec = byDevice.get((t.device || "").trim().toLowerCase())
+    let rec: StatRecord | undefined
+    for (const k of deviceKeys(t.device)) {
+      rec = byDevice.get(k)
+      if (rec) break
+    }
     if (!rec) return t
     const updated: Task = { ...t }
     // Калибровка: отмечаем выполнение и результат.

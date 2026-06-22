@@ -62,7 +62,7 @@ export async function uploadScheduleBulk(
   return { days: Object.keys(byDate).length, total }
 }
 
-export async function uploadStatistics(file: File, date: string): Promise<{ report: ReportItem[]; deviations: number; tasks: Task[] }> {
+export async function uploadStatistics(file: File, date: string): Promise<{ report: ReportItem[]; deviations: number; tasks: Task[]; matched: number; records: number }> {
   const bytes = await file.arrayBuffer()
   const records = parseStatistics(bytes)
   const tasks = await dbGetTasks(date)
@@ -71,7 +71,13 @@ export async function uploadStatistics(file: File, date: string): Promise<{ repo
   // Распределяем данные статистики по колонкам суточного задания и сохраняем.
   const updatedTasks = applyStatisticsToTasks(records, tasks)
   await dbSaveTasks(date, updatedTasks)
-  return { report, deviations: report.filter((r) => !r.matches_plan).length, tasks: updatedTasks }
+  // Сколько заданий реально получили данные (прибытие/убытие/калибровка/итого).
+  const matched = updatedTasks.filter((u, i) => {
+    const o = tasks[i]
+    return o && (u.arrival_time !== o.arrival_time || u.departure_time !== o.departure_time ||
+      u.total_off_hours !== o.total_off_hours || u.calibration !== o.calibration)
+  }).length
+  return { report, deviations: report.filter((r) => !r.matches_plan).length, tasks: updatedTasks, matched, records: records.length }
 }
 
 // ---- Правки полей (локально) ----
