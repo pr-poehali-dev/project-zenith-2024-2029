@@ -146,7 +146,7 @@ export function DispatcherDashboard() {
 
   const handleExportReport = () => {
     if (report.length === 0) { setStatusErr("Нет данных отчёта для выгрузки"); return }
-    exportShiftReport(selectedDate, report, trips)
+    exportShiftReport(selectedDate, report, trips, tasks)
     setStatusMsg("Сменный отчёт выгружен в Excel")
   }
 

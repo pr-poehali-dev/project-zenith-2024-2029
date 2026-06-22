@@ -580,11 +580,65 @@ function yn(b: boolean): string {
   return b ? "Да" : "Нет"
 }
 
+// Строит лист «Отчёт по сотрудникам» в формате ведомости КТСМ: сотрудники
+// сгруппированы по участкам (section), с местом работы, № техкарт, калибровкой,
+// временем прибытия/убытия и приказами на выключение.
+function buildStaffSheet(wb: XLSX.WorkBook, tasks: Task[], dateLabel: string): void {
+  const headers = [
+    "№", "Сотрудник", "Место работы", "№ тех карт", "Перенос графика",
+    "Калибровка", "Время прибытия на КТСМ", "Время убытия на КТСМ",
+    "Номер приказа/время выкл.", "Причина выключения",
+    "Номер приказа/время вкл.", "ФИО ШЧД",
+  ]
+  const aoa: (string | number)[][] = [
+    [`Ведомость работ на КТСМ по сотрудникам — ${dateLabel}`],
+    [],
+    headers,
+  ]
+
+  // Группируем по участку, сохраняя порядок появления.
+  const groups = new Map<string, Task[]>()
+  for (const t of tasks) {
+    const key = t.section?.trim() || "Без участка"
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(t)
+  }
+
+  for (const [section, items] of groups) {
+    aoa.push([`Участок КТСМ ${section}`])
+    items.forEach((t, i) => {
+      aoa.push([
+        i + 1,
+        t.executor || "—",
+        t.location || "—",
+        t.tech_card || t.work || "—",
+        t.transfer_date ? `на ${t.transfer_date.split("-").reverse().join(".")}` : "",
+        t.calibration ? "+" : "",
+        t.arrival_time || "",
+        t.departure_time || "",
+        [t.order_number, t.power_off_time].filter(Boolean).join(" / "),
+        t.shutdown ? "график" : "",
+        t.power_on_time || "",
+        "",
+      ])
+    })
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  ws["!cols"] = [
+    { wch: 4 }, { wch: 28 }, { wch: 30 }, { wch: 32 }, { wch: 14 },
+    { wch: 11 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 18 },
+    { wch: 22 }, { wch: 16 },
+  ]
+  XLSX.utils.book_append_sheet(wb, ws, "Отчёт по сотрудникам")
+}
+
 /** Формирует и скачивает сменный отчёт в Excel: сводка + отклонения + выезды */
 export function exportShiftReport(
   date: string,
   report: ReportItem[],
   trips: ExportTrip[],
+  tasks: Task[] = [],
 ): void {
   const wb = XLSX.utils.book_new()
   const [y, m, d] = date.split("-")
@@ -660,6 +714,9 @@ export function exportShiftReport(
     { wch: 12 }, { wch: 14 }, { wch: 8 }, { wch: 10 }, { wch: 40 },
   ]
   XLSX.utils.book_append_sheet(wb, wsTrips, "Внеплановые выезды")
+
+  // Лист 4 — Отчёт по сотрудникам (ведомость КТСМ по участкам)
+  if (tasks.length) buildStaffSheet(wb, tasks, dateLabel)
 
   saveWorkbook(wb, `smennyy_otchet_${y}_${m}_${d}.xlsx`)
 }
