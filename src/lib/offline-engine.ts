@@ -37,6 +37,8 @@ export type StatRecord = {
   calibration_done: boolean
   calibration_result: string
   shutdown_fact: boolean
+  arrival_time: string
+  departure_time: string
 }
 
 const RESPONSIBLE_KEYWORDS = ["калибровка", "ориентация", "сопротивлени", "изоляци"]
@@ -360,11 +362,15 @@ export function parseStatistics(fileBytes: ArrayBuffer): StatRecord[] {
   let colCal: number | null = null
   let colCalRes: number | null = null
   let colShut: number | null = null
+  let colArrival: number | null = null
+  let colDeparture: number | null = null
   for (let i = 0; i < Math.min(10, rows.length); i++) {
     const rl = rows[i].map((c) => (c ? String(c).toLowerCase().trim() : ""))
     rl.forEach((c, j) => {
       if (c.includes("устройств")) colDevice = j
-      if (c.includes("продолжительност") || c.includes("время") || c.includes("длительност")) colDuration = j
+      if (c.includes("прибыт") || c.includes("приезд") || c.includes("заход")) colArrival = j
+      if (c.includes("убыт") || c.includes("отъезд") || c.includes("выход")) colDeparture = j
+      if ((c.includes("продолжительност") || c.includes("длительност")) || (c.includes("время") && colArrival === null && colDeparture === null && !c.includes("прибыт") && !c.includes("убыт"))) colDuration = j
       if (c.includes("дверь") || c.includes("открыт")) colDoor = j
       if (c.includes("калибровк")) colCal = j
       if (c.includes("результат") && colCal !== null) colCalRes = j
@@ -397,6 +403,8 @@ export function parseStatistics(fileBytes: ArrayBuffer): StatRecord[] {
       calibration_done: calDone,
       calibration_result: calRes,
       shutdown_fact: shutdown,
+      arrival_time: cell(row, colArrival),
+      departure_time: cell(row, colDeparture),
     })
   }
   return records
@@ -419,9 +427,12 @@ export function applyStatisticsToTasks(records: StatRecord[], tasks: Task[]): Ta
       updated.calibration = true
       updated.done = updated.done || "+"
     }
-    // Фактическое время работ → колонки прибытия/убытия (если ещё пусто).
-    if (rec.actual_duration && rec.actual_duration !== "—") {
-      if (!updated.arrival_time) updated.arrival_time = rec.actual_duration
+    // Время прибытия/убытия на КТСМ из статистики (если в задании ещё пусто).
+    if (rec.arrival_time && !updated.arrival_time) updated.arrival_time = rec.arrival_time
+    if (rec.departure_time && !updated.departure_time) updated.departure_time = rec.departure_time
+    // Фактическую длительность работ кладём в «итого», не затирая время прибытия.
+    if (rec.actual_duration && rec.actual_duration !== "—" && !updated.total_off_hours) {
+      updated.total_off_hours = rec.actual_duration
     }
     // Факт выключения устройства.
     if (rec.shutdown_fact) {
@@ -571,13 +582,18 @@ export function downloadSamplePlanLocal(year: number, month: number): void {
 /** Скачивает образец выгрузки «Статистика» на месяц (офлайн) */
 export function downloadSampleStatisticsLocal(year: number, month: number): void {
   const headers = [
-    "Дата", "Устройство", "Время работ (факт)", "Дверь (откр/закр)",
+    "Дата", "Устройство", "Время прибытия на КТСМ", "Время убытия на КТСМ",
+    "Время работ (факт)", "Дверь (откр/закр)",
     "Калибровка", "Результат калибровки", "Отказ/Офлайн",
   ]
   const devices = ["АЛС-1", "АЛС-2", "САУТ-Ц", "ТСКБМ", "КЛУБ-У", "УКСПС",
     "АЛСН", "САУТ-ЦМ", "ДИСК-Б", "КТСМ-02", "УКПТ", "ПОНАБ"]
   const durations = ["01:30", "02:05", "00:43", "00:32", "01:18", "00:38",
     "00:52", "01:12", "00:36", "01:27", "00:48", "01:05"]
+  const arrivals = ["08:00", "08:15", "08:30", "09:00", "09:13", "09:45",
+    "10:20", "10:48", "11:17", "12:07", "12:45", "13:40"]
+  const departures = ["11:05", "11:30", "11:41", "12:15", "12:25", "12:28",
+    "13:00", "13:15", "13:21", "14:10", "14:33", "15:02"]
   const aoa: (string | number)[][] = [headers]
   const days = new Date(year, month, 0).getDate()
   for (let day = 1; day <= days; day++) {
@@ -588,7 +604,12 @@ export function downloadSampleStatisticsLocal(year: number, month: number): void
       const calibration = seed % 3 === 0 ? "Выполнена" : "Не выполнена"
       const calResult = seed % 3 === 0 && seed % 5 !== 0 ? "Норма" : (seed % 3 === 0 ? "Отклонение" : "—")
       const shutdown = seed === 7 ? "Отказ" : "Норма"
-      aoa.push([ddmmyyyy(d), device, durations[(day + idx) % durations.length], door, calibration, calResult, shutdown])
+      aoa.push([
+        ddmmyyyy(d), device,
+        arrivals[(day + idx) % arrivals.length],
+        departures[(day + idx) % departures.length],
+        durations[(day + idx) % durations.length], door, calibration, calResult, shutdown,
+      ])
     })
   }
   aoaToFile(aoa, `statistika_${year}_${String(month).padStart(2, "0")}`)
