@@ -1,8 +1,8 @@
 import {
   parseScheduleForDate, parseScheduleBulk, parseStatistics, buildReport,
-  applyStatisticsToTasks,
+  applyStatisticsToTasks, parseStaffSheet,
   exportMonthlyReport as buildMonthlyExcel,
-  type Task, type ReportItem,
+  type Task, type ReportItem, type StaffRecord,
 } from "./offline-engine"
 import {
   dbSaveTasks, dbAppendTasks, dbGetTasks, dbUpdateTask, dbTransferTask,
@@ -62,8 +62,17 @@ export async function uploadScheduleBulk(
   return { days: Object.keys(byDate).length, total }
 }
 
-export async function uploadStatistics(file: File, date: string): Promise<{ report: ReportItem[]; deviations: number; tasks: Task[]; matched: number; records: number }> {
+export async function uploadStatistics(file: File, date: string): Promise<{ report: ReportItem[]; deviations: number; tasks: Task[]; matched: number; records: number; staff: StaffRecord[] }> {
   const bytes = await file.arrayBuffer()
+
+  // Сначала пробуем распознать ведомость по сотрудникам (КТСМ) — её показываем как есть.
+  const staff = parseStaffSheet(bytes)
+  if (staff.length) {
+    saveStaffSheet(date, staff)
+    const tasks = await dbGetTasks(date)
+    return { report: [], deviations: 0, tasks, matched: staff.length, records: staff.length, staff }
+  }
+
   const records = parseStatistics(bytes)
   const tasks = await dbGetTasks(date)
   const report = buildReport(records, tasks)
@@ -77,7 +86,30 @@ export async function uploadStatistics(file: File, date: string): Promise<{ repo
     return o && (u.arrival_time !== o.arrival_time || u.departure_time !== o.departure_time ||
       u.total_off_hours !== o.total_off_hours || u.calibration !== o.calibration)
   }).length
-  return { report, deviations: report.filter((r) => !r.matches_plan).length, tasks: updatedTasks, matched, records: records.length }
+  return { report, deviations: report.filter((r) => !r.matches_plan).length, tasks: updatedTasks, matched, records: records.length, staff: [] }
+}
+
+// ---- Ведомость по сотрудникам (хранение в localStorage по дате) ----
+function staffKey(date: string): string {
+  return `staff_sheet_${date}`
+}
+
+export function saveStaffSheet(date: string, staff: StaffRecord[]): void {
+  localStorage.setItem(staffKey(date), JSON.stringify(staff))
+}
+
+export function loadStaffSheet(date: string): StaffRecord[] {
+  const raw = localStorage.getItem(staffKey(date))
+  if (!raw) return []
+  try {
+    return JSON.parse(raw) as StaffRecord[]
+  } catch {
+    return []
+  }
+}
+
+export function clearStaffSheet(date: string): void {
+  localStorage.removeItem(staffKey(date))
 }
 
 // ---- Правки полей (локально) ----
@@ -109,4 +141,4 @@ export async function downloadMonthlyReport(year: number, month: number): Promis
   return reports.length
 }
 
-export type { Task, ReportItem, Trip }
+export type { Task, ReportItem, Trip, StaffRecord }

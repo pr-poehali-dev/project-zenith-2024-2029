@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import Icon from "@/components/ui/icon"
 import { OfflineReadyBadge } from "@/components/offline-ready-badge"
 import * as api from "@/lib/api"
-import type { Task, Trip, ReportItem } from "@/lib/api"
+import type { Task, Trip, ReportItem, StaffRecord } from "@/lib/api"
 import { downloadSamplePlanLocal, downloadSampleStatisticsLocal, exportShiftReport, exportDailyTasks, exportUnplannedTrips } from "@/lib/offline-engine"
 
 function todayStr() {
@@ -20,6 +20,7 @@ export function DispatcherDashboard() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [trips, setTrips] = useState<Trip[]>([])
   const [report, setReport] = useState<ReportItem[]>([])
+  const [staff, setStaff] = useState<StaffRecord[]>([])
   const [deviations, setDeviations] = useState(0)
   const [transferTaskId, setTransferTaskId] = useState<number | null>(null)
   const [transferNewDate, setTransferNewDate] = useState(todayStr())
@@ -69,11 +70,16 @@ export function DispatcherDashboard() {
     setTrips(await api.loadTrips(selectedDate))
   }, [selectedDate])
 
+  const loadStaff = useCallback(() => {
+    setStaff(api.loadStaffSheet(selectedDate))
+  }, [selectedDate])
+
   useEffect(() => {
     loadTasks()
     loadReport()
     loadTrips()
-  }, [loadTasks, loadReport, loadTrips])
+    loadStaff()
+  }, [loadTasks, loadReport, loadTrips, loadStaff])
 
   const handleParseSchedule = async () => {
     if (!scheduleFile) { setStatusErr("Выберите файл графика техпроцесса"); return }
@@ -97,11 +103,16 @@ export function DispatcherDashboard() {
     setStatusMsg("")
     setStatusErr("")
     try {
-      const { report, deviations, tasks: updatedTasks } = await api.uploadStatistics(statsFile, selectedDate)
+      const { report, deviations, tasks: updatedTasks, staff: staffRows } = await api.uploadStatistics(statsFile, selectedDate)
       setReport(report)
       setDeviations(deviations)
       setTasks(updatedTasks)
-      setStatusMsg(`Отчёт сформирован: ${report.length} устройств обработано, данные внесены в суточное задание`)
+      if (staffRows.length) {
+        setStaff(staffRows)
+        setStatusMsg(`Ведомость по сотрудникам загружена: ${staffRows.length} строк`)
+      } else {
+        setStatusMsg(`Отчёт сформирован: ${report.length} устройств обработано, данные внесены в суточное задание`)
+      }
     } catch {
       setStatusErr("Ошибка при загрузке файла")
     } finally {
@@ -487,6 +498,70 @@ export function DispatcherDashboard() {
           </div>
         </div>
       </section>
+
+      {/* Ведомость по сотрудникам (КТСМ) */}
+      {staff.length > 0 && (
+        <section id="staff" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-red-500/20">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <h2 className="font-orbitron text-2xl font-bold text-white flex items-center gap-3">
+              <Icon name="Users" className="text-red-500" size={24} /> Ведомость по сотрудникам
+              <span className="font-geist text-sm font-normal text-muted-foreground">({staff.length} строк)</span>
+            </h2>
+            <Button
+              onClick={() => { api.clearStaffSheet(selectedDate); setStaff([]); setStatusMsg("Ведомость очищена") }}
+              variant="outline" className="border-red-500/40 text-white hover:bg-red-500/10"
+            >
+              <Icon name="Trash2" size={16} className="mr-2" /> Очистить
+            </Button>
+          </div>
+          <div className="overflow-x-auto border border-red-500/20 rounded-lg">
+            <table className="w-full text-sm font-geist border-collapse">
+              <thead>
+                <tr className="bg-red-500/10 text-white">
+                  {["№","Сотрудник","Место работы","№ тех карт","Перенос графика","Калибровка","Прибытие на КТСМ","Убытие с КТСМ","Приказ/время выкл.","Причина выключения","Приказ/время вкл.","ФИО ШЧД"].map((h) => (
+                    <th key={h} className="px-3 py-2 text-left font-semibold border border-red-500/20 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const rows: JSX.Element[] = []
+                  let prevSection = ""
+                  for (const r of staff) {
+                    if (r.section && r.section !== prevSection) {
+                      prevSection = r.section
+                      rows.push(
+                        <tr key={`s-${r.id}`} className="bg-red-500/20">
+                          <td colSpan={12} className="px-3 py-1.5 font-semibold text-white border border-red-500/20">
+                            Участок КТСМ {r.section}
+                          </td>
+                        </tr>
+                      )
+                    }
+                    rows.push(
+                      <tr key={r.id} className="text-muted-foreground hover:bg-red-500/5">
+                        <td className="px-3 py-2 border border-red-500/10">{r.num || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10 text-white whitespace-nowrap">{r.employee || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10 whitespace-pre-line">{r.workplace || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10 whitespace-pre-line">{r.tech_cards || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10">{r.transfer || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10 text-center">{r.calibration || ""}</td>
+                        <td className="px-3 py-2 border border-red-500/10 whitespace-pre-line">{r.arrival || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10 whitespace-pre-line">{r.departure || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10">{r.order_off || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10">{r.shutdown_reason || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10">{r.order_on || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10">{r.shchd || "—"}</td>
+                      </tr>
+                    )
+                  }
+                  return rows
+                })()}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* Суточное задание */}
       <section id="tasks" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-red-500/20">

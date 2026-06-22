@@ -351,6 +351,129 @@ export function parseScheduleBulk(fileBytes: ArrayBuffer, year: number, month: n
   return byDate
 }
 
+// ---- Ведомость по сотрудникам (КТСМ) ----
+export type StaffRecord = {
+  id: number
+  section: string
+  num: string
+  employee: string
+  workplace: string
+  tech_cards: string
+  transfer: string
+  calibration: string
+  arrival: string
+  departure: string
+  order_off: string
+  shutdown_reason: string
+  order_on: string
+  shchd: string
+}
+
+// Распознаёт ведомость по сотрудникам: ищет строку заголовка с «сотрудник» и
+// «прибытия на КТСМ». Возвращает индекс заголовка и индексы колонок, либо null.
+type StaffCols = {
+  num: number; employee: number; workplace: number; tech: number; transfer: number
+  cal: number; arrival: number; departure: number; orderOff: number
+  reason: number; orderOn: number; shchd: number
+}
+
+function findStaffColumns(rows: Row[]): { headerRow: number; cols: StaffCols } | null {
+  for (let i = 0; i < Math.min(15, rows.length); i++) {
+    const rl = rows[i].map((c) => (c ? String(c).toLowerCase().trim() : ""))
+    const joined = rl.join(" | ")
+    if (!(joined.includes("сотрудник") && joined.includes("прибыт"))) continue
+    const cols: StaffCols = {
+      num: -1, employee: -1, workplace: -1, tech: -1, transfer: -1,
+      cal: -1, arrival: -1, departure: -1, orderOff: -1, reason: -1, orderOn: -1, shchd: -1,
+    }
+    let arrivalSeen = false
+    rl.forEach((c, j) => {
+      if (c === "№" || c === "n" || (c.includes("№") && cols.num === -1)) cols.num = j
+      if (c.includes("сотрудник")) cols.employee = j
+      if (c.includes("место работы") || (c.includes("место") && c.includes("работ"))) cols.workplace = j
+      if (c.includes("тех карт") || c.includes("тех. карт") || (c.includes("тех") && c.includes("карт"))) cols.tech = j
+      if (c.includes("перенос")) cols.transfer = j
+      if (c.includes("калибров")) cols.cal = j
+      if (c.includes("прибыт")) { cols.arrival = j; arrivalSeen = true }
+      if (c.includes("убыт")) cols.departure = j
+      if (c.includes("приказ") && c.includes("выкл")) cols.orderOff = j
+      if (c.includes("причина")) cols.reason = j
+      // Второй «приказ/время» — это включение; берём после колонки убытия.
+      if (c.includes("приказ") && (c.includes("вкл") || arrivalSeen) && cols.orderOff !== -1 && j > cols.orderOff && cols.orderOn === -1) cols.orderOn = j
+      if (c.includes("шчд") || c.includes("ф.и.о") || c.includes("фио")) cols.shchd = j
+    })
+    if (cols.employee === -1) continue
+    return { headerRow: i, cols }
+  }
+  return null
+}
+
+/** Парсит ведомость работ по сотрудникам (КТСМ). Группирует по участкам. */
+export function parseStaffSheet(fileBytes: ArrayBuffer): StaffRecord[] {
+  const rows = readRows(fileBytes)
+  if (!rows.length) return []
+  const found = findStaffColumns(rows)
+  if (!found) return []
+  const { headerRow, cols } = found
+  const records: StaffRecord[] = []
+  let section = ""
+  let last: StaffRecord | null = null
+
+  for (let i = headerRow + 1; i < rows.length; i++) {
+    const row = rows[i]
+    if (!row || !row.some((c) => c != null && c !== "")) continue
+
+    const employee = cell(row, cols.employee)
+    const workplace = cell(row, cols.workplace)
+    const tech = cell(row, cols.tech)
+    const num = cell(row, cols.num)
+
+    // Строка-заголовок участка: «Участок КТСМ …» (есть только текст участка).
+    const joinedRow = row.map((c) => (c ? String(c) : "")).join("").toLowerCase()
+    const isSectionRow = !employee && !tech && joinedRow.includes("участок")
+    if (isSectionRow) {
+      section = (cell(row, cols.employee) || cell(row, 0) || row.find((c) => c)?.toString() || "").trim()
+      // вытаскиваем «Участок КТСМ Х» из любой ячейки
+      const raw = row.map((c) => (c ? String(c).trim() : "")).find((s) => s.toLowerCase().includes("участок"))
+      if (raw) section = raw.replace(/участок\s+ктсм\s*/i, "").trim() || raw
+      last = null
+      continue
+    }
+
+    // Если нет ФИО, но есть данные — это продолжение того же сотрудника (объединённые ячейки).
+    if (!employee && last) {
+      if (workplace) last.workplace += (last.workplace ? "; " : "") + workplace
+      if (tech) last.tech_cards += (last.tech_cards ? "; " : "") + tech
+      const arr = cell(row, cols.arrival)
+      const dep = cell(row, cols.departure)
+      if (arr) last.arrival += (last.arrival ? " / " : "") + arr
+      if (dep) last.departure += (last.departure ? " / " : "") + dep
+      continue
+    }
+    if (!employee && !workplace && !tech) continue
+
+    const rec: StaffRecord = {
+      id: nextId(),
+      section,
+      num,
+      employee,
+      workplace,
+      tech_cards: tech,
+      transfer: cell(row, cols.transfer),
+      calibration: cell(row, cols.cal),
+      arrival: cell(row, cols.arrival),
+      departure: cell(row, cols.departure),
+      order_off: cell(row, cols.orderOff),
+      shutdown_reason: cell(row, cols.reason),
+      order_on: cell(row, cols.orderOn),
+      shchd: cell(row, cols.shchd),
+    }
+    records.push(rec)
+    last = rec
+  }
+  return records
+}
+
 /** Парсит выгрузку ПО Статистика */
 export function parseStatistics(fileBytes: ArrayBuffer): StatRecord[] {
   const rows = readRows(fileBytes)
