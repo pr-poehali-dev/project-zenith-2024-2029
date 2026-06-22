@@ -6,7 +6,7 @@ import Icon from "@/components/ui/icon"
 import { OfflineReadyBadge } from "@/components/offline-ready-badge"
 import * as api from "@/lib/api"
 import type { Task, Trip, ReportItem, StaffRecord } from "@/lib/api"
-import { downloadSamplePlanLocal, downloadSampleStatisticsLocal, exportShiftReport, exportDailyTasks, exportUnplannedTrips } from "@/lib/offline-engine"
+import { downloadSamplePlanLocal, downloadSampleStatisticsLocal, exportShiftReport, exportDailyTasks, exportUnplannedTrips, exportStaffSheet } from "@/lib/offline-engine"
 
 function todayStr() {
   return new Date().toISOString().split("T")[0]
@@ -160,6 +160,12 @@ export function DispatcherDashboard() {
     if (report.length === 0) { setStatusErr("Нет данных отчёта для выгрузки"); return }
     exportShiftReport(selectedDate, report, trips, tasks)
     setStatusMsg("Сменный отчёт выгружен в Excel")
+  }
+
+  const handleExportStaff = () => {
+    if (staff.length === 0) { setStatusErr("Нет ведомости для выгрузки"); return }
+    exportStaffSheet(selectedDate, staff)
+    setStatusMsg("Ведомость по сотрудникам выгружена в Excel")
   }
 
   const handleExportTasks = () => {
@@ -499,70 +505,6 @@ export function DispatcherDashboard() {
         </div>
       </section>
 
-      {/* Ведомость по сотрудникам (КТСМ) */}
-      {staff.length > 0 && (
-        <section id="staff" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-red-500/20">
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-            <h2 className="font-orbitron text-2xl font-bold text-white flex items-center gap-3">
-              <Icon name="Users" className="text-red-500" size={24} /> Ведомость по сотрудникам
-              <span className="font-geist text-sm font-normal text-muted-foreground">({staff.length} строк)</span>
-            </h2>
-            <Button
-              onClick={() => { api.clearStaffSheet(selectedDate); setStaff([]); setStatusMsg("Ведомость очищена") }}
-              variant="outline" className="border-red-500/40 text-white hover:bg-red-500/10"
-            >
-              <Icon name="Trash2" size={16} className="mr-2" /> Очистить
-            </Button>
-          </div>
-          <div className="overflow-x-auto border border-red-500/20 rounded-lg">
-            <table className="w-full text-sm font-geist border-collapse">
-              <thead>
-                <tr className="bg-red-500/10 text-white">
-                  {["№","Сотрудник","Место работы","№ тех карт","Перенос графика","Калибровка","Прибытие на КТСМ","Убытие с КТСМ","Приказ/время выкл.","Причина выключения","Приказ/время вкл.","ФИО ШЧД"].map((h) => (
-                    <th key={h} className="px-3 py-2 text-left font-semibold border border-red-500/20 whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  const rows: JSX.Element[] = []
-                  let prevSection = ""
-                  for (const r of staff) {
-                    if (r.section && r.section !== prevSection) {
-                      prevSection = r.section
-                      rows.push(
-                        <tr key={`s-${r.id}`} className="bg-red-500/20">
-                          <td colSpan={12} className="px-3 py-1.5 font-semibold text-white border border-red-500/20">
-                            Участок КТСМ {r.section}
-                          </td>
-                        </tr>
-                      )
-                    }
-                    rows.push(
-                      <tr key={r.id} className="text-muted-foreground hover:bg-red-500/5">
-                        <td className="px-3 py-2 border border-red-500/10">{r.num || "—"}</td>
-                        <td className="px-3 py-2 border border-red-500/10 text-white whitespace-nowrap">{r.employee || "—"}</td>
-                        <td className="px-3 py-2 border border-red-500/10 whitespace-pre-line">{r.workplace || "—"}</td>
-                        <td className="px-3 py-2 border border-red-500/10 whitespace-pre-line">{r.tech_cards || "—"}</td>
-                        <td className="px-3 py-2 border border-red-500/10">{r.transfer || "—"}</td>
-                        <td className="px-3 py-2 border border-red-500/10 text-center">{r.calibration || ""}</td>
-                        <td className="px-3 py-2 border border-red-500/10 whitespace-pre-line">{r.arrival || "—"}</td>
-                        <td className="px-3 py-2 border border-red-500/10 whitespace-pre-line">{r.departure || "—"}</td>
-                        <td className="px-3 py-2 border border-red-500/10">{r.order_off || "—"}</td>
-                        <td className="px-3 py-2 border border-red-500/10">{r.shutdown_reason || "—"}</td>
-                        <td className="px-3 py-2 border border-red-500/10">{r.order_on || "—"}</td>
-                        <td className="px-3 py-2 border border-red-500/10">{r.shchd || "—"}</td>
-                      </tr>
-                    )
-                  }
-                  return rows
-                })()}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
       {/* Суточное задание */}
       <section id="tasks" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-red-500/20">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
@@ -690,6 +632,75 @@ export function DispatcherDashboard() {
           </div>
         )}
       </section>
+
+      {/* Ведомость по сотрудникам (КТСМ) */}
+      {staff.length > 0 && (
+        <section id="staff" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-red-500/20">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <h2 className="font-orbitron text-2xl font-bold text-white flex items-center gap-3">
+              <Icon name="Users" className="text-red-500" size={24} /> Ведомость по сотрудникам
+              <span className="font-geist text-sm font-normal text-muted-foreground">({staff.length} строк)</span>
+            </h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button onClick={handleExportStaff} className="bg-red-500 hover:bg-red-600 text-white">
+                <Icon name="Download" size={18} className="mr-2" /> Выгрузить в Excel
+              </Button>
+              <Button
+                onClick={() => { api.clearStaffSheet(selectedDate); setStaff([]); setStatusMsg("Ведомость очищена") }}
+                variant="outline" className="border-red-500/40 text-white hover:bg-red-500/10"
+              >
+                <Icon name="Trash2" size={16} className="mr-2" /> Очистить
+              </Button>
+            </div>
+          </div>
+          <div className="overflow-x-auto border border-red-500/20 rounded-lg">
+            <table className="w-full text-sm font-geist border-collapse">
+              <thead>
+                <tr className="bg-red-500/10 text-white">
+                  {["№","Сотрудник","Место работы","№ тех карт","Перенос графика","Калибровка","Прибытие на КТСМ","Убытие с КТСМ","Приказ/время выкл.","Причина выключения","Приказ/время вкл.","ФИО ШЧД"].map((h) => (
+                    <th key={h} className="px-3 py-2 text-left font-semibold border border-red-500/20 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const rows: JSX.Element[] = []
+                  let prevSection = ""
+                  for (const r of staff) {
+                    if (r.section && r.section !== prevSection) {
+                      prevSection = r.section
+                      rows.push(
+                        <tr key={`s-${r.id}`} className="bg-red-500/20">
+                          <td colSpan={12} className="px-3 py-1.5 font-semibold text-white border border-red-500/20">
+                            Участок КТСМ {r.section}
+                          </td>
+                        </tr>
+                      )
+                    }
+                    rows.push(
+                      <tr key={r.id} className="text-muted-foreground hover:bg-red-500/5">
+                        <td className="px-3 py-2 border border-red-500/10">{r.num || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10 text-white whitespace-nowrap">{r.employee || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10 whitespace-pre-line">{r.workplace || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10 whitespace-pre-line">{r.tech_cards || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10">{r.transfer || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10 text-center">{r.calibration || ""}</td>
+                        <td className="px-3 py-2 border border-red-500/10 whitespace-pre-line">{r.arrival || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10 whitespace-pre-line">{r.departure || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10">{r.order_off || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10">{r.shutdown_reason || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10">{r.order_on || "—"}</td>
+                        <td className="px-3 py-2 border border-red-500/10">{r.shchd || "—"}</td>
+                      </tr>
+                    )
+                  }
+                  return rows
+                })()}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* Внеплановые выезды */}
       <section id="unplanned" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 border-t border-red-500/20">

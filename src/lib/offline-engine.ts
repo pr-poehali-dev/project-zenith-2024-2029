@@ -914,6 +914,47 @@ export function exportShiftReport(
   saveWorkbook(wb, `smennyy_otchet_${y}_${m}_${d}.xlsx`)
 }
 
+/** Выгружает ведомость по сотрудникам (КТСМ) в Excel в исходном виде */
+export function exportStaffSheet(date: string, staff: StaffRecord[]): void {
+  const wb = XLSX.utils.book_new()
+  const [y, m, d] = (date || "0000-00-00").split("-")
+  const dateLabel = `${d}.${m}.${y}`
+
+  const headers = [
+    "№", "Сотрудник", "место работы", "№ тех карт", "перенос графика",
+    "калибровка", "время прибытия на КТСМ", "время убытия на КТСМ",
+    "номер приказа/время выкл.", "причина выключения",
+    "номер приказа/время вкл.", "ФИО ШЧД",
+  ]
+  const aoa: (string | number)[][] = [
+    [`Ведомость работ на КТСМ по сотрудникам — ${dateLabel}`],
+    [],
+    headers,
+  ]
+
+  let prevSection = ""
+  for (const r of staff) {
+    if (r.section && r.section !== prevSection) {
+      prevSection = r.section
+      aoa.push([`Участок КТСМ ${r.section}`])
+    }
+    aoa.push([
+      r.num || "", r.employee || "", r.workplace || "", r.tech_cards || "",
+      r.transfer || "", r.calibration || "", r.arrival || "", r.departure || "",
+      r.order_off || "", r.shutdown_reason || "", r.order_on || "", r.shchd || "",
+    ])
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  ws["!cols"] = [
+    { wch: 4 }, { wch: 30 }, { wch: 34 }, { wch: 36 }, { wch: 14 },
+    { wch: 11 }, { wch: 22 }, { wch: 22 }, { wch: 22 }, { wch: 18 },
+    { wch: 22 }, { wch: 16 },
+  ]
+  XLSX.utils.book_append_sheet(wb, ws, "Ведомость по сотрудникам")
+  saveWorkbook(wb, `vedomost_sotrudniki_${y}_${m}_${d}.xlsx`)
+}
+
 /** Выгружает суточное задание (таблицу работ на день) в Excel */
 export function exportDailyTasks(date: string, tasks: Task[]): void {
   console.log("[exportDailyTasks] версия v2, дата:", date, "строк заданий:", tasks?.length)
