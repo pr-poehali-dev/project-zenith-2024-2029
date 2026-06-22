@@ -97,10 +97,11 @@ export function DispatcherDashboard() {
     setStatusMsg("")
     setStatusErr("")
     try {
-      const { report, deviations } = await api.uploadStatistics(statsFile, selectedDate)
+      const { report, deviations, tasks: updatedTasks } = await api.uploadStatistics(statsFile, selectedDate)
       setReport(report)
       setDeviations(deviations)
-      setStatusMsg(`Отчёт сформирован: ${report.length} устройств обработано`)
+      setTasks(updatedTasks)
+      setStatusMsg(`Отчёт сформирован: ${report.length} устройств обработано, данные внесены в суточное задание`)
     } catch {
       setStatusErr("Ошибка при загрузке файла")
     } finally {

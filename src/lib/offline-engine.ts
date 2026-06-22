@@ -402,6 +402,36 @@ export function parseStatistics(fileBytes: ArrayBuffer): StatRecord[] {
   return records
 }
 
+// Распределяет данные выгрузки «Статистика» по колонкам суточного задания.
+// Сопоставление идёт по устройству (Task.device). Заполняются: фактическое
+// время работ → прибытие/убытие, калибровка, факт выключения. Возвращает
+// обновлённый список заданий (новые объекты, исходные не мутируются).
+export function applyStatisticsToTasks(records: StatRecord[], tasks: Task[]): Task[] {
+  const byDevice = new Map<string, StatRecord>()
+  for (const r of records) byDevice.set(r.device.trim().toLowerCase(), r)
+
+  return tasks.map((t) => {
+    const rec = byDevice.get((t.device || "").trim().toLowerCase())
+    if (!rec) return t
+    const updated: Task = { ...t }
+    // Калибровка: отмечаем выполнение и результат.
+    if (rec.calibration_done) {
+      updated.calibration = true
+      updated.done = updated.done || "+"
+    }
+    // Фактическое время работ → колонки прибытия/убытия (если ещё пусто).
+    if (rec.actual_duration && rec.actual_duration !== "—") {
+      if (!updated.arrival_time) updated.arrival_time = rec.actual_duration
+    }
+    // Факт выключения устройства.
+    if (rec.shutdown_fact) {
+      updated.shutdown = true
+      if (!updated.transfer_reason) updated.transfer_reason = "Отказ/офлайн по статистике"
+    }
+    return updated
+  })
+}
+
 function toMinutes(s: string): number | null {
   const parts = s.trim().split(":")
   if (parts.length < 2) return null

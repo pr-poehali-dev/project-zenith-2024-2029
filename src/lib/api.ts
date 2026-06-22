@@ -1,5 +1,6 @@
 import {
   parseScheduleForDate, parseScheduleBulk, parseStatistics, buildReport,
+  applyStatisticsToTasks,
   exportMonthlyReport as buildMonthlyExcel,
   type Task, type ReportItem,
 } from "./offline-engine"
@@ -61,13 +62,16 @@ export async function uploadScheduleBulk(
   return { days: Object.keys(byDate).length, total }
 }
 
-export async function uploadStatistics(file: File, date: string): Promise<{ report: ReportItem[]; deviations: number }> {
+export async function uploadStatistics(file: File, date: string): Promise<{ report: ReportItem[]; deviations: number; tasks: Task[] }> {
   const bytes = await file.arrayBuffer()
   const records = parseStatistics(bytes)
   const tasks = await dbGetTasks(date)
   const report = buildReport(records, tasks)
   await dbSaveReport(date, report)
-  return { report, deviations: report.filter((r) => !r.matches_plan).length }
+  // Распределяем данные статистики по колонкам суточного задания и сохраняем.
+  const updatedTasks = applyStatisticsToTasks(records, tasks)
+  await dbSaveTasks(date, updatedTasks)
+  return { report, deviations: report.filter((r) => !r.matches_plan).length, tasks: updatedTasks }
 }
 
 // ---- Правки полей (локально) ----
