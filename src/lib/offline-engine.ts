@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx"
+import ExcelJS from "exceljs"
 
 export type Task = {
   id: number
@@ -914,11 +915,13 @@ export function exportShiftReport(
   saveWorkbook(wb, `smennyy_otchet_${y}_${m}_${d}.xlsx`)
 }
 
-/** Выгружает ведомость по сотрудникам (КТСМ) в Excel в исходном виде */
-export function exportStaffSheet(date: string, staff: StaffRecord[]): void {
-  const wb = XLSX.utils.book_new()
+/** Выгружает ведомость по сотрудникам (КТСМ) в Excel — цветную и с границами */
+export async function exportStaffSheet(date: string, staff: StaffRecord[]): Promise<void> {
   const [y, m, d] = (date || "0000-00-00").split("-")
   const dateLabel = `${d}.${m}.${y}`
+
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet("Ведомость по сотрудникам")
 
   const headers = [
     "№", "Сотрудник", "место работы", "№ тех карт", "перенос графика",
@@ -926,33 +929,88 @@ export function exportStaffSheet(date: string, staff: StaffRecord[]): void {
     "номер приказа/время выкл.", "причина выключения",
     "номер приказа/время вкл.", "ФИО ШЧД",
   ]
-  const aoa: (string | number)[][] = [
-    [`Ведомость работ на КТСМ по сотрудникам — ${dateLabel}`],
-    [],
-    headers,
-  ]
+  const widths = [5, 30, 34, 36, 14, 11, 22, 22, 22, 18, 22, 16]
+  ws.columns = widths.map((w) => ({ width: w }))
+
+  const COLS = headers.length
+  const thin = { style: "thin" as const, color: { argb: "FFB0B0B0" } }
+  const border = { top: thin, left: thin, bottom: thin, right: thin }
+
+  // Заголовок-титул
+  const titleRow = ws.addRow([`Ведомость работ на КТСМ по сотрудникам — ${dateLabel}`])
+  ws.mergeCells(titleRow.number, 1, titleRow.number, COLS)
+  const titleCell = titleRow.getCell(1)
+  titleCell.font = { bold: true, size: 14, color: { argb: "FFFFFFFF" } }
+  titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFB91C1C" } }
+  titleCell.alignment = { horizontal: "center", vertical: "middle" }
+  titleRow.height = 26
+
+  ws.addRow([])
+
+  // Шапка таблицы
+  const head = ws.addRow(headers)
+  head.height = 34
+  head.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 }
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDC2626" } }
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true }
+    cell.border = border
+  })
 
   let prevSection = ""
+  let zebra = false
   for (const r of staff) {
     if (r.section && r.section !== prevSection) {
       prevSection = r.section
-      aoa.push([`Участок КТСМ ${r.section}`])
+      const secRow = ws.addRow([`Участок КТСМ ${r.section}`])
+      ws.mergeCells(secRow.number, 1, secRow.number, COLS)
+      const sc = secRow.getCell(1)
+      sc.font = { bold: true, color: { argb: "FF7F1D1D" }, size: 11 }
+      sc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFECACA" } }
+      sc.alignment = { horizontal: "left", vertical: "middle" }
+      sc.border = border
+      zebra = false
     }
-    aoa.push([
+    const row = ws.addRow([
       r.num || "", r.employee || "", r.workplace || "", r.tech_cards || "",
       r.transfer || "", r.calibration || "", r.arrival || "", r.departure || "",
       r.order_off || "", r.shutdown_reason || "", r.order_on || "", r.shchd || "",
     ])
+    const bg = zebra ? "FFFFF1F2" : "FFFFFFFF"
+    zebra = !zebra
+    row.eachCell({ includeEmpty: true }, (cell, col) => {
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } }
+      cell.alignment = { vertical: "top", wrapText: true }
+      cell.border = border
+      cell.font = { size: 10 }
+      // Калибровка «+» — зелёным жирным по центру
+      if (col === 6 && (r.calibration || "").includes("+")) {
+        cell.font = { size: 12, bold: true, color: { argb: "FF15803D" } }
+        cell.alignment = { horizontal: "center", vertical: "middle" }
+      }
+      // Причина выключения — оранжевым выделением, если заполнена
+      if (col === 10 && r.shutdown_reason) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFEDD5" } }
+        cell.font = { size: 10, bold: true, color: { argb: "FFC2410C" } }
+      }
+    })
   }
 
-  const ws = XLSX.utils.aoa_to_sheet(aoa)
-  ws["!cols"] = [
-    { wch: 4 }, { wch: 30 }, { wch: 34 }, { wch: 36 }, { wch: 14 },
-    { wch: 11 }, { wch: 22 }, { wch: 22 }, { wch: 22 }, { wch: 18 },
-    { wch: 22 }, { wch: 16 },
-  ]
-  XLSX.utils.book_append_sheet(wb, ws, "Ведомость по сотрудникам")
-  saveWorkbook(wb, `vedomost_sotrudniki_${y}_${m}_${d}.xlsx`)
+  // Закрепляем шапку (первые 3 строки)
+  ws.views = [{ state: "frozen", ySplit: 3 }]
+
+  const buf = await wb.xlsx.writeBuffer()
+  const blob = new Blob([buf], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = `vedomost_sotrudniki_${y}_${m}_${d}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1500)
 }
 
 /** Выгружает суточное задание (таблицу работ на день) в Excel */

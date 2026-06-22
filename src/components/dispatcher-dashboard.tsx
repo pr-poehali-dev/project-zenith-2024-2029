@@ -162,9 +162,9 @@ export function DispatcherDashboard() {
     setStatusMsg("Сменный отчёт выгружен в Excel")
   }
 
-  const handleExportStaff = () => {
+  const handleExportStaff = async () => {
     if (staff.length === 0) { setStatusErr("Нет ведомости для выгрузки"); return }
-    exportStaffSheet(selectedDate, staff)
+    await exportStaffSheet(selectedDate, staff)
     setStatusMsg("Ведомость по сотрудникам выгружена в Excel")
   }
 
