@@ -1,5 +1,4 @@
 import * as XLSX from "xlsx"
-import ExcelJS from "exceljs"
 
 export type Task = {
   id: number
@@ -353,129 +352,6 @@ export function parseScheduleBulk(fileBytes: ArrayBuffer, year: number, month: n
   return byDate
 }
 
-// ---- Ведомость по сотрудникам (КТСМ) ----
-export type StaffRecord = {
-  id: number
-  section: string
-  num: string
-  employee: string
-  workplace: string
-  tech_cards: string
-  transfer: string
-  calibration: string
-  arrival: string
-  departure: string
-  order_off: string
-  shutdown_reason: string
-  order_on: string
-  shchd: string
-}
-
-// Распознаёт ведомость по сотрудникам: ищет строку заголовка с «сотрудник» и
-// «прибытия на КТСМ». Возвращает индекс заголовка и индексы колонок, либо null.
-type StaffCols = {
-  num: number; employee: number; workplace: number; tech: number; transfer: number
-  cal: number; arrival: number; departure: number; orderOff: number
-  reason: number; orderOn: number; shchd: number
-}
-
-function findStaffColumns(rows: Row[]): { headerRow: number; cols: StaffCols } | null {
-  for (let i = 0; i < Math.min(15, rows.length); i++) {
-    const rl = rows[i].map((c) => (c ? String(c).toLowerCase().trim() : ""))
-    const joined = rl.join(" | ")
-    if (!(joined.includes("сотрудник") && joined.includes("прибыт"))) continue
-    const cols: StaffCols = {
-      num: -1, employee: -1, workplace: -1, tech: -1, transfer: -1,
-      cal: -1, arrival: -1, departure: -1, orderOff: -1, reason: -1, orderOn: -1, shchd: -1,
-    }
-    let arrivalSeen = false
-    rl.forEach((c, j) => {
-      if (c === "№" || c === "n" || (c.includes("№") && cols.num === -1)) cols.num = j
-      if (c.includes("сотрудник")) cols.employee = j
-      if (c.includes("место работы") || (c.includes("место") && c.includes("работ"))) cols.workplace = j
-      if (c.includes("тех карт") || c.includes("тех. карт") || (c.includes("тех") && c.includes("карт"))) cols.tech = j
-      if (c.includes("перенос")) cols.transfer = j
-      if (c.includes("калибров")) cols.cal = j
-      if (c.includes("прибыт")) { cols.arrival = j; arrivalSeen = true }
-      if (c.includes("убыт")) cols.departure = j
-      if (c.includes("приказ") && c.includes("выкл")) cols.orderOff = j
-      if (c.includes("причина")) cols.reason = j
-      // Второй «приказ/время» — это включение; берём после колонки убытия.
-      if (c.includes("приказ") && (c.includes("вкл") || arrivalSeen) && cols.orderOff !== -1 && j > cols.orderOff && cols.orderOn === -1) cols.orderOn = j
-      if (c.includes("шчд") || c.includes("ф.и.о") || c.includes("фио")) cols.shchd = j
-    })
-    if (cols.employee === -1) continue
-    return { headerRow: i, cols }
-  }
-  return null
-}
-
-/** Парсит ведомость работ по сотрудникам (КТСМ). Группирует по участкам. */
-export function parseStaffSheet(fileBytes: ArrayBuffer): StaffRecord[] {
-  const rows = readRows(fileBytes)
-  if (!rows.length) return []
-  const found = findStaffColumns(rows)
-  if (!found) return []
-  const { headerRow, cols } = found
-  const records: StaffRecord[] = []
-  let section = ""
-  let last: StaffRecord | null = null
-
-  for (let i = headerRow + 1; i < rows.length; i++) {
-    const row = rows[i]
-    if (!row || !row.some((c) => c != null && c !== "")) continue
-
-    const employee = cell(row, cols.employee)
-    const workplace = cell(row, cols.workplace)
-    const tech = cell(row, cols.tech)
-    const num = cell(row, cols.num)
-
-    // Строка-заголовок участка: «Участок КТСМ …» (есть только текст участка).
-    const joinedRow = row.map((c) => (c ? String(c) : "")).join("").toLowerCase()
-    const isSectionRow = !employee && !tech && joinedRow.includes("участок")
-    if (isSectionRow) {
-      section = (cell(row, cols.employee) || cell(row, 0) || row.find((c) => c)?.toString() || "").trim()
-      // вытаскиваем «Участок КТСМ Х» из любой ячейки
-      const raw = row.map((c) => (c ? String(c).trim() : "")).find((s) => s.toLowerCase().includes("участок"))
-      if (raw) section = raw.replace(/участок\s+ктсм\s*/i, "").trim() || raw
-      last = null
-      continue
-    }
-
-    // Если нет ФИО, но есть данные — это продолжение того же сотрудника (объединённые ячейки).
-    if (!employee && last) {
-      if (workplace) last.workplace += (last.workplace ? "; " : "") + workplace
-      if (tech) last.tech_cards += (last.tech_cards ? "; " : "") + tech
-      const arr = cell(row, cols.arrival)
-      const dep = cell(row, cols.departure)
-      if (arr) last.arrival += (last.arrival ? " / " : "") + arr
-      if (dep) last.departure += (last.departure ? " / " : "") + dep
-      continue
-    }
-    if (!employee && !workplace && !tech) continue
-
-    const rec: StaffRecord = {
-      id: nextId(),
-      section,
-      num,
-      employee,
-      workplace,
-      tech_cards: tech,
-      transfer: cell(row, cols.transfer),
-      calibration: cell(row, cols.cal),
-      arrival: cell(row, cols.arrival),
-      departure: cell(row, cols.departure),
-      order_off: cell(row, cols.orderOff),
-      shutdown_reason: cell(row, cols.reason),
-      order_on: cell(row, cols.orderOn),
-      shchd: cell(row, cols.shchd),
-    }
-    records.push(rec)
-    last = rec
-  }
-  return records
-}
-
 // ---- Распознавание формата «Поиск событий» (лог КТСМ) ----
 // Колонки: Установка | Лог. имя | Дата | Событие. Строки — отдельные события
 // (Калибровка / Двери) по устройствам. Агрегируем по устройству.
@@ -641,12 +517,21 @@ export function parseStatistics(fileBytes: ArrayBuffer): StatRecord[] {
 // обновлённый список заданий (новые объекты, исходные не мутируются).
 // Ключи сопоставления устройства: нормализованное имя + «числовой» ключ (км/номер).
 function deviceKeys(name: string): string[] {
-  const raw = (name || "").trim().toLowerCase()
+  const raw = (name || "").trim().toLowerCase().replace(/ё/g, "е")
   const keys: string[] = []
-  if (raw) keys.push(raw.replace(/\s+/g, ""))
-  // Извлекаем число (например «1813км» → «1813», «км 1813» → «1813»).
-  const num = raw.match(/\d+/)
-  if (num) keys.push(`#${num[0]}`)
+  if (!raw) return keys
+  // Полное имя без пробелов: «Дондуковская (н)» → «дондуковская(н)».
+  keys.push(raw.replace(/\s+/g, ""))
+  // Имя только из букв/цифр (убираем скобки, точки, пробелы, дефисы):
+  // «Б Озеро (н)» → «бозерон», «У Лабинская (ч)» → «улабинскаяч».
+  const alnum = raw.replace(/[^a-zа-я0-9]/gi, "")
+  if (alnum && alnum !== raw.replace(/\s+/g, "")) keys.push(alnum)
+  // Числовой ключ только для «километровых» названий («1813 км»), чтобы не
+  // путать станции с числом в названии (Энем 1 / Энем 2).
+  if (raw.includes("км")) {
+    const num = raw.match(/\d+/)
+    if (num) keys.push(`#${num[0]}км`)
+  }
   return keys
 }
 
@@ -1019,103 +904,6 @@ export function exportShiftReport(
   saveWorkbook(wb, `smennyy_otchet_${y}_${m}_${d}.xlsx`)
 }
 
-/** Выгружает ведомость по сотрудникам (КТСМ) в Excel — цветную и с границами */
-export async function exportStaffSheet(date: string, staff: StaffRecord[]): Promise<void> {
-  const [y, m, d] = (date || "0000-00-00").split("-")
-  const dateLabel = `${d}.${m}.${y}`
-
-  const wb = new ExcelJS.Workbook()
-  const ws = wb.addWorksheet("Ведомость по сотрудникам")
-
-  const headers = [
-    "№", "Сотрудник", "место работы", "№ тех карт", "перенос графика",
-    "калибровка", "время прибытия на КТСМ", "время убытия на КТСМ",
-    "номер приказа/время выкл.", "причина выключения",
-    "номер приказа/время вкл.", "ФИО ШЧД",
-  ]
-  const widths = [5, 30, 34, 36, 14, 11, 22, 22, 22, 18, 22, 16]
-  ws.columns = widths.map((w) => ({ width: w }))
-
-  const COLS = headers.length
-  const thin = { style: "thin" as const, color: { argb: "FFB0B0B0" } }
-  const border = { top: thin, left: thin, bottom: thin, right: thin }
-
-  // Заголовок-титул
-  const titleRow = ws.addRow([`Ведомость работ на КТСМ по сотрудникам — ${dateLabel}`])
-  ws.mergeCells(titleRow.number, 1, titleRow.number, COLS)
-  const titleCell = titleRow.getCell(1)
-  titleCell.font = { bold: true, size: 14, color: { argb: "FFFFFFFF" } }
-  titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFB91C1C" } }
-  titleCell.alignment = { horizontal: "center", vertical: "middle" }
-  titleRow.height = 26
-
-  ws.addRow([])
-
-  // Шапка таблицы
-  const head = ws.addRow(headers)
-  head.height = 34
-  head.eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 }
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDC2626" } }
-    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true }
-    cell.border = border
-  })
-
-  let prevSection = ""
-  let zebra = false
-  for (const r of staff) {
-    if (r.section && r.section !== prevSection) {
-      prevSection = r.section
-      const secRow = ws.addRow([`Участок КТСМ ${r.section}`])
-      ws.mergeCells(secRow.number, 1, secRow.number, COLS)
-      const sc = secRow.getCell(1)
-      sc.font = { bold: true, color: { argb: "FF7F1D1D" }, size: 11 }
-      sc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFECACA" } }
-      sc.alignment = { horizontal: "left", vertical: "middle" }
-      sc.border = border
-      zebra = false
-    }
-    const row = ws.addRow([
-      r.num || "", r.employee || "", r.workplace || "", r.tech_cards || "",
-      r.transfer || "", r.calibration || "", r.arrival || "", r.departure || "",
-      r.order_off || "", r.shutdown_reason || "", r.order_on || "", r.shchd || "",
-    ])
-    const bg = zebra ? "FFFFF1F2" : "FFFFFFFF"
-    zebra = !zebra
-    row.eachCell({ includeEmpty: true }, (cell, col) => {
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } }
-      cell.alignment = { vertical: "top", wrapText: true }
-      cell.border = border
-      cell.font = { size: 10 }
-      // Калибровка «+» — зелёным жирным по центру
-      if (col === 6 && (r.calibration || "").includes("+")) {
-        cell.font = { size: 12, bold: true, color: { argb: "FF15803D" } }
-        cell.alignment = { horizontal: "center", vertical: "middle" }
-      }
-      // Причина выключения — оранжевым выделением, если заполнена
-      if (col === 10 && r.shutdown_reason) {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFEDD5" } }
-        cell.font = { size: 10, bold: true, color: { argb: "FFC2410C" } }
-      }
-    })
-  }
-
-  // Закрепляем шапку (первые 3 строки)
-  ws.views = [{ state: "frozen", ySplit: 3 }]
-
-  const buf = await wb.xlsx.writeBuffer()
-  const blob = new Blob([buf], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = `vedomost_sotrudniki_${y}_${m}_${d}.xlsx`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  setTimeout(() => URL.revokeObjectURL(url), 1500)
-}
 
 /** Выгружает суточное задание (таблицу работ на день) в Excel */
 export function exportDailyTasks(date: string, tasks: Task[]): void {
