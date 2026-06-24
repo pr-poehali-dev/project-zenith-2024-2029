@@ -1,6 +1,6 @@
 import {
   parseScheduleForDate, parseScheduleBulk, parseStatistics, buildReport,
-  applyStatisticsToTasks, parseStaffSheet,
+  applyStatisticsToTasks, parseStaffSheet, parseEventLog,
   exportMonthlyReport as buildMonthlyExcel,
   type Task, type ReportItem, type StaffRecord,
 } from "./offline-engine"
@@ -73,7 +73,10 @@ export async function uploadStatistics(file: File, date: string): Promise<{ repo
     return { report: [], deviations: 0, tasks, matched: staff.length, records: staff.length, staff }
   }
 
-  const records = parseStatistics(bytes)
+  // Лог «Поиск событий» (Установка / Событие): берём последнюю калибровку и
+  // первое/последнее срабатывание дверей по каждому устройству.
+  let records = parseEventLog(bytes)
+  if (!records.length) records = parseStatistics(bytes)
   const tasks = await dbGetTasks(date)
   const report = buildReport(records, tasks)
   await dbSaveReport(date, report)

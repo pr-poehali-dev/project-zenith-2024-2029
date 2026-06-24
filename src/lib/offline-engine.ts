@@ -29,6 +29,7 @@ export type Task = {
   power_off_time: string
   power_on_time: string
   total_off_hours: string
+  calibration_text?: string
 }
 
 export type StatRecord = {
@@ -475,6 +476,106 @@ export function parseStaffSheet(fileBytes: ArrayBuffer): StaffRecord[] {
   return records
 }
 
+// ---- Распознавание формата «Поиск событий» (лог КТСМ) ----
+// Колонки: Установка | Лог. имя | Дата | Событие. Строки — отдельные события
+// (Калибровка / Двери) по устройствам. Агрегируем по устройству.
+function findEventLogColumns(rows: Row[]): { headerRow: number; cols: { install: number; logName: number; date: number; event: number } } | null {
+  for (let i = 0; i < Math.min(15, rows.length); i++) {
+    const rl = rows[i].map((c) => (c ? String(c).toLowerCase().trim() : ""))
+    const joined = rl.join(" | ")
+    if (!(joined.includes("установка") && joined.includes("событие"))) continue
+    const cols = { install: -1, logName: -1, date: -1, event: -1 }
+    rl.forEach((c, j) => {
+      if (c.includes("установка")) cols.install = j
+      if (c.includes("лог") && c.includes("имя")) cols.logName = j
+      if (c.includes("дата")) cols.date = j
+      if (c.includes("событие")) cols.event = j
+    })
+    if (cols.install !== -1 && cols.event !== -1) return { headerRow: i, cols }
+  }
+  return null
+}
+
+// Разбирает дату вида «22.06.26 21:27:47» → {ts, time:"21:27"}.
+function parseEventDate(s: string): { ts: number; time: string } | null {
+  const m = (s || "").trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/)
+  if (!m) return null
+  let year = Number(m[3])
+  if (year < 100) year += 2000
+  const ts = new Date(year, Number(m[2]) - 1, Number(m[1]), Number(m[4]), Number(m[5]), Number(m[6] || 0)).getTime()
+  const time = `${m[4].padStart(2, "0")}:${m[5]}`
+  return { ts, time }
+}
+
+/** Парсит лог «Поиск событий»: агрегирует по устройству последнюю калибровку
+ * и первое/последнее срабатывание дверей. Возвращает StatRecord[]. */
+export function parseEventLog(fileBytes: ArrayBuffer): StatRecord[] {
+  const rows = readRows(fileBytes)
+  if (!rows.length) return []
+  const found = findEventLogColumns(rows)
+  if (!found) return []
+  const { headerRow, cols } = found
+
+  type Agg = {
+    device: string
+    lastCalTs: number
+    lastCalText: string
+    firstDoorTs: number
+    firstDoorTime: string
+    lastDoorTs: number
+    lastDoorTime: string
+  }
+  const byDevice = new Map<string, Agg>()
+
+  for (let i = headerRow + 1; i < rows.length; i++) {
+    const row = rows[i]
+    if (!row || !row.some((c) => c != null && c !== "")) continue
+    const device = cell(row, cols.install)
+    if (!device) continue
+    const event = cell(row, cols.event)
+    const dt = parseEventDate(cell(row, cols.date))
+    if (!dt) continue
+    const ev = event.toLowerCase()
+
+    let agg = byDevice.get(device)
+    if (!agg) {
+      agg = { device, lastCalTs: 0, lastCalText: "", firstDoorTs: 0, firstDoorTime: "", lastDoorTs: 0, lastDoorTime: "" }
+      byDevice.set(device, agg)
+    }
+
+    if (ev.includes("калибровк")) {
+      if (dt.ts > agg.lastCalTs) {
+        agg.lastCalTs = dt.ts
+        agg.lastCalText = event
+      }
+    } else if (ev.includes("двери") || ev.includes("дверь")) {
+      if (agg.firstDoorTs === 0 || dt.ts < agg.firstDoorTs) {
+        agg.firstDoorTs = dt.ts
+        agg.firstDoorTime = dt.time
+      }
+      if (dt.ts > agg.lastDoorTs) {
+        agg.lastDoorTs = dt.ts
+        agg.lastDoorTime = dt.time
+      }
+    }
+  }
+
+  const records: StatRecord[] = []
+  for (const a of byDevice.values()) {
+    records.push({
+      device: a.device,
+      staff_present: a.firstDoorTs !== 0,
+      actual_duration: "—",
+      calibration_done: a.lastCalText !== "",
+      calibration_result: a.lastCalText || "Не выполнена",
+      shutdown_fact: false,
+      arrival_time: a.firstDoorTime,
+      departure_time: a.lastDoorTime,
+    })
+  }
+  return records
+}
+
 /** Парсит выгрузку ПО Статистика */
 export function parseStatistics(fileBytes: ArrayBuffer): StatRecord[] {
   const rows = readRows(fileBytes)
@@ -565,14 +666,17 @@ export function applyStatisticsToTasks(records: StatRecord[], tasks: Task[]): Ta
     }
     if (!rec) return t
     const updated: Task = { ...t }
-    // Калибровка: отмечаем выполнение и результат.
+    // Калибровка: отмечаем выполнение и сохраняем текст последней калибровки.
     if (rec.calibration_done) {
       updated.calibration = true
       updated.done = updated.done || "+"
     }
-    // Время прибытия/убытия на КТСМ из статистики (если в задании ещё пусто).
-    if (rec.arrival_time && !updated.arrival_time) updated.arrival_time = rec.arrival_time
-    if (rec.departure_time && !updated.departure_time) updated.departure_time = rec.departure_time
+    if (rec.calibration_result && rec.calibration_result !== "Не выполнена") {
+      updated.calibration_text = rec.calibration_result
+    }
+    // Время прибытия/убытия на КТСМ (первое/последнее срабатывание дверей).
+    if (rec.arrival_time) updated.arrival_time = rec.arrival_time
+    if (rec.departure_time) updated.departure_time = rec.departure_time
     // Фактическую длительность работ кладём в «итого», не затирая время прибытия.
     if (rec.actual_duration && rec.actual_duration !== "—" && !updated.total_off_hours) {
       updated.total_off_hours = rec.actual_duration
@@ -1025,7 +1129,7 @@ export function exportDailyTasks(date: string, tasks: Task[]): void {
   const headers = [
     "Участок", "Устройство", "Расположение", "№ тех.карты", "Перечень работ",
     "Плановая продолжительность", "Признаки", "ФИО исполнителя", "Приказ на выкл.",
-    "Выполнено", "Собственник авто", "ГСМ, л", "Вид транспорта",
+    "Калибровка", "Собственник авто", "ГСМ, л", "Вид транспорта",
     "Прибытие", "Убытие", "Время выкл.", "Время вкл.", "Итого откл. (ч)", "Перенос",
   ]
   const aoa: (string | number)[][] = [headers]
@@ -1041,13 +1145,13 @@ export function exportDailyTasks(date: string, tasks: Task[]): void {
       t.insulation_check && "Проверка изоляции",
     ].filter(Boolean).join(", ")
 
-    const doneLabel = t.done === "+" ? "Выполнено" : (t.done === "−" || t.done === "-") ? "Не выполнено" : "—"
+    const calLabel = t.calibration_text || (t.calibration ? "Выполнена" : "—")
     const transfer = t.transfer_date ? `Перенос на ${t.transfer_date}${t.transfer_reason ? ` (${t.transfer_reason})` : ""}` : "—"
 
     aoa.push([
       t.section || "—", t.device || "—", t.location || "—", t.tech_card || "—", t.work || "—",
       t.planned_duration || "—", signs || "—", t.executor || "—", t.order_number || "—",
-      doneLabel, t.car_owner || "—", t.fuel_spent || "—", t.transport_type || "—",
+      calLabel, t.car_owner || "—", t.fuel_spent || "—", t.transport_type || "—",
       t.arrival_time || "—", t.departure_time || "—", t.power_off_time || "—",
       t.power_on_time || "—", t.total_off_hours || "—", transfer,
     ])

@@ -540,7 +540,7 @@ export function DispatcherDashboard() {
                   <th className="p-2">Признаки</th>
                   <th className="p-2">ФИО исполнителя</th>
                   <th className="p-2">Приказ на выкл.</th>
-                  <th className="p-2">Выполн. (+/-)</th>
+                  <th className="p-2">Калибровка</th>
                   <th className="p-2">Собственник авто</th>
                   <th className="p-2">ГСМ, л</th>
                   <th className="p-2">Вид транспорта</th>
@@ -590,11 +590,11 @@ export function DispatcherDashboard() {
                       <Input value={t.order_number} onChange={(e) => updateTaskField(t, "order_number", e.target.value)} placeholder="№ приказа" className={`bg-background text-white h-8 w-28 text-xs ${t.shutdown ? "border-orange-500/50" : "border-red-500/20"}`} />
                     </td>
                     <td className="p-2">
-                      <select value={t.done} onChange={(e) => updateTaskField(t, "done", e.target.value)} className="bg-background border border-red-500/20 text-white rounded h-8 px-2 text-xs">
-                        <option value="">—</option>
-                        <option value="+">+</option>
-                        <option value="-">−</option>
-                      </select>
+                      {t.calibration_text ? (
+                        <span className="text-xs text-yellow-300 whitespace-nowrap" title={t.calibration_text}>{t.calibration_text}</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className="p-2">
                       <Input value={t.car_owner} onChange={(e) => updateTaskField(t, "car_owner", e.target.value)} placeholder="—" className="bg-background border-red-500/20 text-white h-8 w-36 text-xs" />
